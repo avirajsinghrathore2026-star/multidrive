@@ -1,13 +1,16 @@
 import { google } from 'googleapis';
 import { Readable } from 'stream';
+import { getServerConfig } from '@/lib/config';
 
 const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 
 export function getOAuth2Client() {
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/auth/google/callback`;
+  const { googleClientId, googleClientSecret, appUrl } = getServerConfig();
+  const redirectUri = `${appUrl}/api/auth/google/callback`;
+
   return new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
+    googleClientId,
+    googleClientSecret,
     redirectUri
   );
 }
@@ -95,4 +98,18 @@ export async function renameDriveFile(refreshToken: string, fileId: string, newN
     fields: 'id, name',
   });
   return response.data;
+}
+
+/**
+ * Revoke Google OAuth refresh token on account disconnect.
+ */
+export async function revokeGoogleToken(refreshToken: string): Promise<boolean> {
+  try {
+    const oauth2Client = getOAuth2Client();
+    await oauth2Client.revokeToken(refreshToken);
+    return true;
+  } catch (err) {
+    console.error('Failed to revoke Google OAuth token:', err instanceof Error ? err.message : 'Revocation error');
+    return false;
+  }
 }
