@@ -12,12 +12,13 @@ export function getOAuth2Client() {
   );
 }
 
-export function generateAuthUrl() {
+export function generateAuthUrl(state?: string) {
   const oauth2Client = getOAuth2Client();
   return oauth2Client.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',
     scope: SCOPES,
+    state: state,
   });
 }
 

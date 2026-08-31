@@ -1,4 +1,4 @@
--- MultiDrive Supabase Database Schema (Idempotent Safe Script)
+-- MultiDrive Supabase Database Schema (Phase 1 Secure Architecture)
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -7,7 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 --------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.connected_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   google_email TEXT NOT NULL,
   vault_secret_id TEXT NOT NULL,
   storage_used_bytes BIGINT NOT NULL DEFAULT 0,
@@ -16,43 +16,41 @@ CREATE TABLE IF NOT EXISTS public.connected_accounts (
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
-ALTER TABLE public.connected_accounts ALTER COLUMN user_id DROP NOT NULL;
 ALTER TABLE public.connected_accounts ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can manage their own connected accounts" ON public.connected_accounts;
 CREATE POLICY "Users can manage their own connected accounts"
   ON public.connected_accounts
   FOR ALL
-  USING (auth.uid() = user_id OR user_id IS NULL)
-  WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 --------------------------------------------------------------------------------
 -- 2. Virtual Folders Table
 --------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.virtual_folders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   name TEXT NOT NULL,
   parent_folder_id UUID REFERENCES public.virtual_folders(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
-ALTER TABLE public.virtual_folders ALTER COLUMN user_id DROP NOT NULL;
 ALTER TABLE public.virtual_folders ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can manage their own virtual folders" ON public.virtual_folders;
 CREATE POLICY "Users can manage their own virtual folders"
   ON public.virtual_folders
   FOR ALL
-  USING (auth.uid() = user_id OR user_id IS NULL)
-  WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 --------------------------------------------------------------------------------
--- 3. File Records Table (Includes Soft Delete / Trash support)
+-- 3. File Records Table
 --------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.file_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
   filename TEXT NOT NULL,
   size_bytes BIGINT NOT NULL,
   mime_type TEXT NOT NULL,
@@ -64,15 +62,14 @@ CREATE TABLE IF NOT EXISTS public.file_records (
   deleted_at TIMESTAMPTZ
 );
 
-ALTER TABLE public.file_records ALTER COLUMN user_id DROP NOT NULL;
 ALTER TABLE public.file_records ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Users can manage their own file records" ON public.file_records;
 CREATE POLICY "Users can manage their own file records"
   ON public.file_records
   FOR ALL
-  USING (auth.uid() = user_id OR user_id IS NULL)
-  WITH CHECK (auth.uid() = user_id OR user_id IS NULL);
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
 
 --------------------------------------------------------------------------------
 -- 4. Shared Links Table
@@ -96,7 +93,7 @@ CREATE POLICY "Users can manage shared links for their files"
   USING (
     EXISTS (
       SELECT 1 FROM public.file_records fr
-      WHERE fr.id = shared_links.file_id AND (fr.user_id = auth.uid() OR fr.user_id IS NULL)
+      WHERE fr.id = shared_links.file_id AND fr.user_id = auth.uid()
     )
   );
 
@@ -122,7 +119,7 @@ CREATE POLICY "Users can manage file chunks for their files"
   USING (
     EXISTS (
       SELECT 1 FROM public.file_records fr
-      WHERE fr.id = file_chunks.parent_file_id AND (fr.user_id = auth.uid() OR fr.user_id IS NULL)
+      WHERE fr.id = file_chunks.parent_file_id AND fr.user_id = auth.uid()
     )
   );
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as archiverModule from 'archiver';
-import { createClient } from '@/lib/supabase/server';
+import { requireUser, AuthError } from '@/lib/auth';
 import { decryptToken } from '@/lib/vault';
 import { getDriveFileStream } from '@/lib/google-drive';
 import { PassThrough } from 'stream';
@@ -9,6 +9,7 @@ const createArchiver = (archiverModule as any).default || archiverModule;
 
 export async function POST(request: NextRequest) {
   try {
+    const { user, supabase } = await requireUser();
     const body = await request.json();
     const { fileIds } = body;
 
@@ -16,11 +17,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'fileIds array required' }, { status: 400 });
     }
 
-    const supabase = await createClient();
+    // Fetch file records strictly belonging to authenticated user
     const { data: files, error } = await supabase
       .from('file_records')
       .select('*, connected_accounts(*)')
-      .in('id', fileIds);
+      .in('id', fileIds)
+      .eq('user_id', user.id);
 
     if (error || !files || files.length === 0) {
       return NextResponse.json({ error: 'No valid files found for archiving' }, { status: 404 });
@@ -61,6 +63,9 @@ export async function POST(request: NextRequest) {
 
     return new NextResponse(webStream, { headers });
   } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.statusCode });
+    }
     console.error('Batch download zip error:', err);
     return NextResponse.json({ error: 'Failed to create zip archive' }, { status: 500 });
   }

@@ -22,7 +22,7 @@ export async function GET(
       .eq('token', token)
       .single();
 
-    if (error || !link) {
+    if (error || !link || !link.file_records) {
       return new NextResponse('Shared link not found or invalid.', { status: 404 });
     }
 
@@ -46,7 +46,7 @@ export async function GET(
       }
     }
 
-    // 4. Stream file from Google Drive
+    // 4. Stream specifically shared file from Google Drive
     const file = link.file_records;
     const account = file.connected_accounts;
     const refreshToken = decryptToken(account.vault_secret_id);
