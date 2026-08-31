@@ -4,6 +4,9 @@ import { getOAuth2Client, fetchGoogleAccountDetails } from '@/lib/google-drive';
 import { encryptToken, decryptToken } from '@/lib/vault';
 import { cookies } from 'next/headers';
 
+// In-memory cache for atomic single-use OAuth state replay protection during server lifecycle
+const consumedOAuthStates = new Set<string>();
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');
@@ -17,11 +20,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${appUrl}?error=oauth_invalid_request`);
   }
 
+  // Single-use Replay Protection: Check if state was already consumed
+  if (consumedOAuthStates.has(stateParam)) {
+    console.error('Replayed OAuth state detected in memory cache:', stateParam);
+    return NextResponse.redirect(`${appUrl}?error=oauth_state_replayed`);
+  }
+
   try {
-    // 1. Enforce authenticated MultiDrive user
+    // 1. Enforce authenticated MultiDrive user session
     const { user, supabase } = await requireUser();
 
-    // 2. Validate OAuth state cookie & match parameter
+    // 2. Validate OAuth state cookie & match URL parameter
     const cookieStore = await cookies();
     const cookieState = cookieStore.get('md_oauth_state')?.value;
 
@@ -30,8 +39,15 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}?error=oauth_state_mismatch`);
     }
 
-    // Clear state cookie to prevent replay attacks
+    // Immediately delete state cookie to enforce single-use replay prevention
     cookieStore.delete('md_oauth_state');
+    consumedOAuthStates.add(stateParam);
+
+    // Limit memory cache size to prevent leak over long server uptimes
+    if (consumedOAuthStates.size > 1000) {
+      const firstItem = consumedOAuthStates.values().next().value;
+      if (firstItem) consumedOAuthStates.delete(firstItem);
+    }
 
     // Decrypt and verify state payload
     const decryptedPayload = decryptToken(stateParam);
@@ -42,13 +58,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}?error=oauth_user_mismatch`);
     }
 
-    // Check expiration (10 minutes max)
+    // Check state expiration (10 minutes max)
     if (Date.now() - parsedState.createdAt > 600000) {
       console.error('OAuth state expired');
       return NextResponse.redirect(`${appUrl}?error=oauth_state_expired`);
     }
 
-    // 3. Exchange authorization code for tokens
+    // 3. Exchange authorization code for Google tokens
     const oauth2Client = getOAuth2Client();
     const { tokens } = await oauth2Client.getToken(code);
 
