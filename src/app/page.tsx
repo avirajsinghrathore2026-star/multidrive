@@ -11,6 +11,8 @@ import { StorageAnalytics } from '@/components/StorageAnalytics';
 import { DuplicateFinder } from '@/components/DuplicateFinder';
 import { RecyclingBin } from '@/components/RecyclingBin';
 import { ShareModal } from '@/components/ShareModal';
+import { AuthModal } from '@/components/AuthModal';
+import { createClient } from '@/lib/supabase/client';
 import { CheckCircle2, AlertCircle, HardDrive, BarChart3, Copy, Trash2, ArrowLeftRight } from 'lucide-react';
 
 type TabType = 'overview' | 'analytics' | 'duplicates' | 'trash';
@@ -20,6 +22,10 @@ function DashboardContent() {
 
   // Navigation Tab State
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+
+  // User Auth State
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
 
   // Core State
   const [accounts, setAccounts] = useState<AccountData[]>([]);
@@ -36,7 +42,26 @@ function DashboardContent() {
 
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // OAuth callback toast handler
+  // Check Current User Auth Session
+  const checkUserSession = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getUser();
+      if (data.user) {
+        setUserEmail(data.user.email || null);
+      } else {
+        setUserEmail(null);
+      }
+    } catch (err) {
+      console.error('Failed to check user session:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkUserSession();
+  }, [checkUserSession]);
+
+  // OAuth callback & unauthenticated error toast handler
   useEffect(() => {
     const connected = searchParams.get('connected');
     const email = searchParams.get('email');
@@ -51,6 +76,7 @@ function DashboardContent() {
       let errorText = `OAuth Error (${error})`;
       if (error === 'unauthenticated') {
         errorText = 'Authentication Required: Please sign up or log in first before connecting a Google Drive account.';
+        setIsAuthOpen(true); // Auto-open Auth modal when unauthenticated
       } else if (error === 'oauth_cancelled') {
         errorText = 'Google Authorization was cancelled.';
       } else if (error === 'oauth_no_refresh_token') {
@@ -118,6 +144,21 @@ function DashboardContent() {
       setIsLoading(false);
     });
   }, [fetchAccounts, fetchFiles, fetchFolders, currentFolderId]);
+
+  // Sign Out Handler
+  const handleSignOut = async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+      setUserEmail(null);
+      setAccounts([]);
+      setFiles([]);
+      setFolders([]);
+      setToastMessage({ text: 'Signed out successfully', type: 'success' });
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
+  };
 
   // Quota Refresh Handler
   const handleRefreshQuotas = async () => {
@@ -227,6 +268,9 @@ function DashboardContent() {
         onRefresh={handleRefreshQuotas}
         isRefreshing={isRefreshing}
         onOpenUpload={() => setIsUploadOpen(true)}
+        userEmail={userEmail}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onSignOut={handleSignOut}
       />
 
       {/* Main Container */}
@@ -357,6 +401,16 @@ function DashboardContent() {
         {/* Tab 4: Recycling Bin */}
         {activeTab === 'trash' && <RecyclingBin onRefreshDashboard={refreshAllData} />}
       </main>
+
+      {/* Auth Sign In / Sign Up Modal */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onAuthSuccess={() => {
+          checkUserSession();
+          refreshAllData();
+        }}
+      />
 
       {/* Upload Modal */}
       <UploadModal

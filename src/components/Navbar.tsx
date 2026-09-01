@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { HardDrive, Plus, RefreshCw, Layers, ShieldCheck } from 'lucide-react';
+import { HardDrive, Plus, RefreshCw, Layers, ShieldCheck, LogIn, LogOut, User } from 'lucide-react';
 
 interface NavbarProps {
   connectedCount: number;
@@ -9,6 +9,9 @@ interface NavbarProps {
   onRefresh: () => void;
   isRefreshing: boolean;
   onOpenUpload: () => void;
+  userEmail: string | null;
+  onOpenAuth: () => void;
+  onSignOut: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -17,6 +20,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRefresh,
   isRefreshing,
   onOpenUpload,
+  userEmail,
+  onOpenAuth,
+  onSignOut,
 }) => {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/80 backdrop-blur-xl">
@@ -39,6 +45,29 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Quick Actions */}
         <div className="flex items-center gap-3">
+          {/* User Session / Auth Trigger */}
+          {userEmail ? (
+            <div className="flex items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-1.5 text-xs text-slate-300">
+              <User className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+              <span className="max-w-[120px] truncate hidden md:inline">{userEmail}</span>
+              <button
+                onClick={onSignOut}
+                className="ml-1 text-slate-400 hover:text-rose-400 transition"
+                title="Sign Out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onOpenAuth}
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-950/40 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-900/60 hover:text-white transition shadow-sm"
+            >
+              <LogIn className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Sign In / Register</span>
+            </button>
+          )}
+
           {/* Refresh Quotas */}
           <button
             onClick={onRefresh}
@@ -52,7 +81,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Connect Account Button */}
           <a
-            href="/api/auth/google/connect"
+            href={userEmail ? '/api/auth/google/connect' : '#'}
+            onClick={(e) => {
+              if (!userEmail) {
+                e.preventDefault();
+                onOpenAuth();
+              }
+            }}
             className="flex items-center gap-2 rounded-lg border border-indigo-500/30 bg-indigo-950/50 px-3 py-2 text-xs font-medium text-indigo-300 hover:bg-indigo-900/60 hover:text-white transition shadow-sm"
           >
             <Plus className="h-4 w-4 text-indigo-400" />
