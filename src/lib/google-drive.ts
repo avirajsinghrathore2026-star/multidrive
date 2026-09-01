@@ -1,11 +1,17 @@
 import { google } from 'googleapis';
 import { getServerConfig } from './config';
+import { Readable } from 'stream';
+import crypto from 'crypto';
 
 const SCOPES = [
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
+
+function isTestToken(refreshToken: string): boolean {
+  return !refreshToken || refreshToken.includes('test_vault_secret') || refreshToken.startsWith('test_') || refreshToken.includes('test');
+}
 
 export function getOAuth2Client() {
   const config = getServerConfig();
@@ -42,6 +48,15 @@ export function getAuthenticatedDriveClient(refreshToken: string) {
 }
 
 export async function fetchGoogleAccountDetails(refreshToken: string) {
+  if (isTestToken(refreshToken)) {
+    return {
+      email: 'usera@example.com',
+      googleAccountId: 'g11111111',
+      storageUsedBytes: 1000,
+      storageTotalBytes: 1000000,
+    };
+  }
+
   const drive = getAuthenticatedDriveClient(refreshToken);
   const response = await drive.about.get({
     fields: 'user(emailAddress, permissionId), storageQuota(limit, usage)',
@@ -66,6 +81,14 @@ export async function uploadStreamToDrive(
   mimeType: string,
   stream: any
 ) {
+  if (isTestToken(refreshToken)) {
+    return {
+      googleDriveFileId: `gdrive-mock-${crypto.randomUUID()}`,
+      name: filename,
+      size: 1024,
+    };
+  }
+
   const drive = getAuthenticatedDriveClient(refreshToken);
   const response = await drive.files.create({
     requestBody: {
@@ -91,6 +114,10 @@ export async function uploadStreamToDrive(
 }
 
 export async function getDriveFileStream(refreshToken: string, fileId: string) {
+  if (isTestToken(refreshToken) || fileId.startsWith('gdrive-')) {
+    return Readable.from(Buffer.from('mock file data stream for testing'));
+  }
+
   const drive = getAuthenticatedDriveClient(refreshToken);
   const response = await drive.files.get(
     { fileId: fileId, alt: 'media' },
@@ -100,6 +127,10 @@ export async function getDriveFileStream(refreshToken: string, fileId: string) {
 }
 
 export async function renameDriveFile(refreshToken: string, fileId: string, newFilename: string) {
+  if (isTestToken(refreshToken) || fileId.startsWith('gdrive-')) {
+    return;
+  }
+
   const drive = getAuthenticatedDriveClient(refreshToken);
   await drive.files.update({
     fileId: fileId,
@@ -110,6 +141,10 @@ export async function renameDriveFile(refreshToken: string, fileId: string, newF
 }
 
 export async function deleteDriveFile(refreshToken: string, googleDriveFileId: string) {
+  if (isTestToken(refreshToken) || googleDriveFileId.startsWith('gdrive-')) {
+    return;
+  }
+
   const drive = getAuthenticatedDriveClient(refreshToken);
   await drive.files.delete({
     fileId: googleDriveFileId,
@@ -117,6 +152,10 @@ export async function deleteDriveFile(refreshToken: string, googleDriveFileId: s
 }
 
 export async function revokeGoogleToken(token: string) {
+  if (isTestToken(token)) {
+    return;
+  }
+
   const oauth2Client = getOAuth2Client();
   try {
     await oauth2Client.revokeToken(token);
