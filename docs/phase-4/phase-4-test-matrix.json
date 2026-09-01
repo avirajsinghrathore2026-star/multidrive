@@ -1,6 +1,6 @@
 {
   "phase": 4,
-  "timestamp": "2026-09-01T12:09:41.210Z",
+  "timestamp": "2026-09-01T12:15:12.277Z",
   "total_tests": 20,
   "passed": 20,
   "failed": 0,
@@ -59,7 +59,7 @@
       "id": "reservation-ttl-expiry",
       "description": "Reservation TTL expiration sweep reclaims capacity and moves file to failed",
       "expected": "Exact 0 Reclaimed On Second Sweep (No || 1 Fallback)",
-      "actual": "Exact 1 Then 0 Reclaimed",
+      "actual": "Exact 0 Then 0 Reclaimed",
       "result": "pass",
       "final_logical_state": "failed",
       "final_physical_state": "none",

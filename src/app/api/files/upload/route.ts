@@ -46,32 +46,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 1. Create initial logical file record in 'pending' state
-    const { data: initialFile, error: pendingError } = await supabase
-      .from('file_records')
-      .insert({
-        user_id: user.id,
-        filename: file.name,
-        size_bytes: file.size,
-        mime_type: file.type || 'application/octet-stream',
-        connected_account_id: '11111111-1111-1111-1111-111111111111', // Placeholder updated upon reservation
-        google_drive_file_id: 'pending-upload',
-        virtual_folder_id: virtualFolderId && virtualFolderId !== 'root' ? virtualFolderId : null,
-        upload_state: 'pending',
-        idempotency_key: idempotencyKey,
-        uploaded_at: new Date().toISOString(),
-      })
-      .select()
-      .single();
+    const fileRecordId = crypto.randomUUID();
 
-    if (pendingError || !initialFile) {
-      console.error('Failed to initialize pending file record:', pendingError);
-      return NextResponse.json({ error: 'Failed to initialize upload record' }, { status: 500 });
-    }
-
-    const fileRecordId = initialFile.id;
-
-    // 2. Race-Safe Capacity Selection & Lease Reservation (pending -> reserved)
+    // 1. Race-Safe Capacity Selection & Lease Reservation (pending -> reserved)
     let leaseResult;
     try {
       leaseResult = await createReservationLease(
@@ -82,7 +59,6 @@ export async function POST(request: NextRequest) {
         idempotencyKey
       );
     } catch (capacityErr: any) {
-      await transitionUploadState(supabase, fileRecordId, 'pending', 'rejected');
       return NextResponse.json({ error: capacityErr.message || 'Capacity reservation rejected' }, { status: 400 });
     }
 
@@ -91,10 +67,29 @@ export async function POST(request: NextRequest) {
     // Explicitly verify account ownership
     await requireOwnedAccount(supabase, user.id, targetAccount.id);
 
-    // Transition pending -> reserved
-    await transitionUploadState(supabase, fileRecordId, 'pending', 'reserved', {
-      connected_account_id: targetAccount.id,
-    });
+    // 2. Create file record directly linked to reserved targetAccount.id in 'reserved' state
+    const { data: initialFile, error: pendingError } = await supabase
+      .from('file_records')
+      .insert({
+        id: fileRecordId,
+        user_id: user.id,
+        connected_account_id: targetAccount.id,
+        google_drive_file_id: 'pending-upload',
+        filename: file.name,
+        size_bytes: file.size,
+        mime_type: file.type || 'application/octet-stream',
+        virtual_folder_id: virtualFolderId && virtualFolderId !== 'root' ? virtualFolderId : null,
+        upload_state: 'reserved',
+        idempotency_key: idempotencyKey,
+        uploaded_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (pendingError || !initialFile) {
+      console.error('Failed to initialize reserved file record:', pendingError);
+      return NextResponse.json({ error: 'Failed to initialize upload record' }, { status: 500 });
+    }
 
     // 3. Convert File buffer to Readable stream & start transfer (reserved -> uploading -> uploaded)
     await transitionUploadState(supabase, fileRecordId, 'reserved', 'uploading');
