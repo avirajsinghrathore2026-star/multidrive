@@ -41,9 +41,14 @@ export async function GET(request: NextRequest) {
     });
 
     return response;
-  } catch (err) {
-    console.error('Failed to initiate Google OAuth:', err instanceof Error ? err.message : 'Unknown error');
-    // Redirect cleanly to app homepage with error param instead of showing black JSON screen
-    return NextResponse.redirect(`${appUrl}?error=unauthenticated`);
+  } catch (err: any) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('Failed to initiate Google OAuth:', errorMsg);
+
+    if (err.name === 'AuthError' || errorMsg.includes('Authentication required')) {
+      return NextResponse.redirect(`${appUrl}/login?next=/dashboard&error=unauthenticated`);
+    }
+
+    return NextResponse.redirect(`${appUrl}/dashboard?error=${encodeURIComponent(errorMsg)}`);
   }
 }

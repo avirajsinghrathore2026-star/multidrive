@@ -74,7 +74,7 @@ function DashboardContent() {
         type: 'success',
       });
     } else if (error) {
-      let errorText = `OAuth Error (${error})`;
+      let errorText = decodeURIComponent(error);
       if (error === 'unauthenticated') {
         errorText = 'Authentication Required: Please sign up or log in first.';
         router.push('/login');
