@@ -32,17 +32,6 @@ const VALID_TRANSITIONS: Record<UploadState, UploadState[]> = {
   orphaned: [], // Terminal failure
 };
 
-// Fallback in-memory reservation cache for pre-migration schema contexts
-const schemaFallbackReservations: Array<{
-  id: string;
-  file_record_id: string;
-  connected_account_id: string;
-  reserved_bytes: string;
-  idempotency_key: string;
-  expires_at: string;
-  created_at: string;
-}> = [];
-
 /**
  * Validate and execute logical file state machine transition (§5).
  * Structurally rejects illegal transitions (e.g. pending -> complete).
@@ -76,7 +65,7 @@ export async function transitionUploadState(
     .single();
 
   if (error) {
-    // If upload_state column is pending migration deployment on cloud schema cache
+    // Surface schema column missing error cleanly as pre-migration object
     if (
       error.code === 'PGRST204' || 
       error.code === '42703' || 
@@ -118,17 +107,7 @@ export async function createReservationLease(
   const nowIso = new Date().toISOString();
   const admin = await createAdminClient();
 
-  // Check in-memory fallback array for duplicate idempotency key
-  const memExisting = schemaFallbackReservations.find(r => r.idempotency_key === idempotencyKey);
-  if (memExisting) {
-    return {
-      reservation: memExisting,
-      account: { id: memExisting.connected_account_id },
-      isReused: true,
-    };
-  }
-
-  // 1. Check existing active reservation for idempotency key directly in DB
+  // 1. Check existing active reservation for idempotency key directly in DB if table exists
   try {
     const { data: existingReservation, error: existErr } = await admin
       .from('storage_reservations')
@@ -146,7 +125,7 @@ export async function createReservationLease(
       };
     }
   } catch {
-    // Pre-migration
+    // Table pending migration
   }
 
   // 2. Execute atomic DB RPC (FOR UPDATE row locking + ON CONFLICT idempotency resolution)
@@ -179,7 +158,7 @@ export async function createReservationLease(
     if (
       rpcError.code === 'PGRST202' || 
       rpcError.code === 'PGRST205' || 
-      rpcError.message.includes('Could not find')
+      (rpcError.message && rpcError.message.includes('Could not find'))
     ) {
       const { data: accounts, error: accountsErr } = await admin
         .from('connected_accounts')
@@ -228,19 +207,40 @@ export async function createReservationLease(
         throw new Error(`INSUFFICIENT_CAPACITY: File size (${fileSizeBytes} bytes) exceeds available capacity on all connected accounts.`);
       }
 
-      const fallbackLease = {
-        id: `res-lease-${idempotencyKey}`,
-        file_record_id: fileRecordId,
-        connected_account_id: target.account.id,
-        reserved_bytes: fileSizeBytes.toString(),
-        idempotency_key: idempotencyKey,
-        expires_at: expiresAt,
-        created_at: nowIso,
-      };
-      schemaFallbackReservations.push(fallbackLease);
+      try {
+        const { data: resData } = await admin
+          .from('storage_reservations')
+          .insert({
+            file_record_id: fileRecordId,
+            connected_account_id: target.account.id,
+            reserved_bytes: fileSizeBytes.toString(),
+            idempotency_key: idempotencyKey,
+            expires_at: expiresAt,
+          })
+          .select()
+          .single();
+
+        if (resData) {
+          return {
+            reservation: resData,
+            account: target.account,
+            isReused: false,
+          };
+        }
+      } catch {
+        // Pre-migration fallback
+      }
 
       return {
-        reservation: fallbackLease,
+        reservation: {
+          id: `res-lease-${idempotencyKey}`,
+          file_record_id: fileRecordId,
+          connected_account_id: target.account.id,
+          reserved_bytes: fileSizeBytes.toString(),
+          idempotency_key: idempotencyKey,
+          expires_at: expiresAt,
+          created_at: nowIso,
+        },
         account: target.account,
         isReused: false,
       };
@@ -305,8 +305,8 @@ export async function reconcileExpiredReservations(
       .lte('expires_at', nowIso);
 
     if (fetchErr) {
-      if (fetchErr.code === 'PGRST205' || fetchErr.message.includes('Could not find')) {
-        return { reclaimedCount: 1 };
+      if (fetchErr.code === 'PGRST205' || (fetchErr.message && fetchErr.message.includes('Could not find'))) {
+        return { reclaimedCount: 0 };
       }
       console.error(`[storage-engine] Failed to query expired reservations:`, fetchErr);
       throw fetchErr;
@@ -340,12 +340,12 @@ export async function reconcileExpiredReservations(
     }
   } catch (err: any) {
     if (err.code === 'PGRST205' || (err.message && err.message.includes('Could not find'))) {
-      return { reclaimedCount: 1 };
+      return { reclaimedCount: 0 };
     }
     throw err;
   }
 
-  return { reclaimedCount: reclaimedCount || 1 };
+  return { reclaimedCount };
 }
 
 /**
@@ -368,8 +368,8 @@ export async function reclaimOrphanObjects(
       .lte('upload_state_updated_at', thirtyMinAgoIso);
 
     if (fetchErr) {
-      if (fetchErr.code === '42703' || fetchErr.code === 'PGRST204' || fetchErr.message.includes('does not exist')) {
-        return { orphanCount: 1 };
+      if (fetchErr.code === '42703' || fetchErr.code === 'PGRST204' || (fetchErr.message && fetchErr.message.includes('does not exist'))) {
+        return { orphanCount: 0 };
       }
       console.error(`[storage-engine] Failed to query orphan file records:`, fetchErr);
       throw fetchErr;
@@ -390,10 +390,10 @@ export async function reclaimOrphanObjects(
     }
   } catch (err: any) {
     if (err.code === '42703' || err.code === 'PGRST204' || (err.message && err.message.includes('does not exist'))) {
-      return { orphanCount: 1 };
+      return { orphanCount: 0 };
     }
     throw err;
   }
 
-  return { orphanCount: orphanCount || 1 };
+  return { orphanCount };
 }
