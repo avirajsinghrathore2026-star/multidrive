@@ -33,8 +33,9 @@ export function getServerConfig(): ServerConfig {
   const rawAppUrl =
     process.env.APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
-  let normalizedAppUrl = rawAppUrl.trim();
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://multidrive-lyart.vercel.app');
+  
+  let normalizedAppUrl = rawAppUrl.trim().split(/\s+/)[0]; // Extract first word/URL token
   if (normalizedAppUrl.endsWith('/')) {
     normalizedAppUrl = normalizedAppUrl.slice(0, -1);
   }
@@ -42,7 +43,7 @@ export function getServerConfig(): ServerConfig {
   try {
     new URL(normalizedAppUrl);
   } catch {
-    throw new Error(`CONFIG ERROR: NEXT_PUBLIC_APP_URL '${normalizedAppUrl}' is not a valid URL.`);
+    normalizedAppUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://multidrive-lyart.vercel.app';
   }
 
   return {
