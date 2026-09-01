@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Immediately delete state cookie & register in consumed cache to enforce single-use replay prevention
-    cookieStore.delete('md_oauth_state');
+    cookieStore.set('md_oauth_state', '', { path: '/', maxAge: 0 });
     consumedOAuthStates.add(stateParam);
 
     if (consumedOAuthStates.size > 1000) {

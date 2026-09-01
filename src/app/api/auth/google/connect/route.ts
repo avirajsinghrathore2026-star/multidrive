@@ -1,14 +1,23 @@
 import { NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
+import { requireUser } from '@/lib/auth';
 import { generateAuthUrl } from '@/lib/google-drive';
 import { encryptToken } from '@/lib/vault';
-import { cookies } from 'next/headers';
+import { getServerConfig } from '@/lib/config';
+import crypto from 'crypto';
 
 export async function GET() {
+  let appUrl = 'http://localhost:3000';
   try {
+    appUrl = getServerConfig().appUrl;
+  } catch {
+    // Fallback if config validation fails during error redirect
+  }
+
+  try {
+    // 1. Enforce authenticated MultiDrive user session
     const { user } = await requireUser();
 
-    // Generate cryptographic state payload bound to this user
+    // 2. Generate cryptographic state payload bound to this user
     const statePayload = JSON.stringify({
       userId: user.id,
       nonce: crypto.randomUUID(),
@@ -17,27 +26,24 @@ export async function GET() {
 
     const encryptedState = encryptToken(statePayload);
 
-    // Generate Google OAuth consent URL with state
+    // 3. Generate Google OAuth consent URL with state
     const authUrl = generateAuthUrl(encryptedState);
 
+    // 4. Construct redirect response and attach state cookie directly to response
     const response = NextResponse.redirect(authUrl);
 
-    // Store state in HTTP-Only secure cookie for 10-minute callback validation
-    const cookieStore = await cookies();
-    cookieStore.set('md_oauth_state', encryptedState, {
+    response.cookies.set('md_oauth_state', encryptedState, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      path: '/api/auth/google',
+      path: '/',
       maxAge: 600, // 10 minutes
     });
 
     return response;
   } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('Failed to initiate Google OAuth:', err);
-    return NextResponse.json({ error: 'Failed to initiate Google OAuth' }, { status: 500 });
+    console.error('Failed to initiate Google OAuth:', err instanceof Error ? err.message : 'Unknown error');
+    // Redirect cleanly to app homepage with error param instead of showing black JSON screen
+    return NextResponse.redirect(`${appUrl}?error=unauthenticated`);
   }
 }
