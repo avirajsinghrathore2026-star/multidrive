@@ -49,7 +49,11 @@ function AuthPortalContent() {
       if (error) throw error;
     } catch (err: any) {
       console.error('Google Sign In Error:', err);
-      setMessage({ text: err.message || 'Failed to initiate Google OAuth', type: 'error' });
+      let errorMsg = err.message || 'Failed to initiate Google OAuth';
+      if (errorMsg.includes('provider is not enabled') || errorMsg.includes('Unsupported provider') || err.error_code === 'validation_failed') {
+        errorMsg = 'Google OAuth Login is not enabled in your Supabase project dashboard. Please log in using Email & Password or Magic Link below (or enable Google under Authentication -> Providers in Supabase).';
+      }
+      setMessage({ text: errorMsg, type: 'error' });
       setIsGoogleLoading(false);
     }
   };
