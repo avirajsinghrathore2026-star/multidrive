@@ -33,17 +33,24 @@ export function getServerConfig(): ServerConfig {
   const rawAppUrl =
     process.env.APP_URL ||
     process.env.NEXT_PUBLIC_APP_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://multidrive-lyart.vercel.app');
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'https://multidrive-lyart.vercel.app');
   
   let normalizedAppUrl = rawAppUrl.trim().split(/\s+/)[0]; // Extract first word/URL token
+  if (!normalizedAppUrl.startsWith('http://') && !normalizedAppUrl.startsWith('https://')) {
+    normalizedAppUrl = `https://${normalizedAppUrl}`;
+  }
   if (normalizedAppUrl.endsWith('/')) {
     normalizedAppUrl = normalizedAppUrl.slice(0, -1);
+  }
+
+  if (process.env.NODE_ENV === 'production' && normalizedAppUrl.includes('localhost')) {
+    normalizedAppUrl = 'https://multidrive-lyart.vercel.app';
   }
 
   try {
     new URL(normalizedAppUrl);
   } catch {
-    normalizedAppUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://multidrive-lyart.vercel.app';
+    normalizedAppUrl = 'https://multidrive-lyart.vercel.app';
   }
 
   return {
