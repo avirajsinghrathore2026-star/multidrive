@@ -1,6 +1,6 @@
 # MultiDrive Project State
 
-**Current Phase**: Ready for Phase 7 (Frontend UX & Multi-Account Interface).  
+**Current Phase**: Ready for Phase 8.  
 **Last Updated**: September 2, 2026  
 **Repository State**: Clean, zero-warning production build with 100% test pass rate across all suites.
 
@@ -10,7 +10,11 @@
 
 MultiDrive is a unified multi-account cloud storage aggregator designed around a single-object storage paradigm with zero fragmentation.
 
-- **Frontend & App Layer**: Built with **Next.js 16 (App Router)** and **React 19** using Vanilla CSS, Tailwind, and Lucide icons.
+- **Frontend & App Layer (Phase 7)**: Built with **Next.js 16 (App Router)** and **React 19** using Vanilla CSS, Tailwind, and Lucide icons. Enforces strict routing hierarchy:
+  - `/` (Marketing Landing Page)
+  - `/login` (Auth Portal with Google OAuth PKCE, Email/Password, Magic Link)
+  - `/dashboard` (Protected Application Dashboard)
+- **Session & Edge Middleware (Phase 7)**: Cookie-based SSR session management using `@supabase/ssr` with Edge Middleware (`middleware.ts`) enforcing route protection and token refresh.
 - **Backend & Database**: **Supabase (PostgreSQL)** utilizing Row Level Security (RLS) policies, database-level cross-user ownership enforcement triggers (`check_file_records_ownership()`, `check_job_ownership()`), and atomic PL/pgSQL capacity selection stored procedures (`create_storage_reservation_atomic`).
 - **Storage Paradigm**: **1:1 Logical-to-Physical Mapping**. Each logical `file_records` entry corresponds to exactly 1 physical object stored on 1 connected Google Drive account (`connected_accounts`), eliminating multi-part file splitting or chunk metadata overhead.
 - **API & Validation Layer (Phase 6)**: Strict Zod schema input validation (`src/lib/schemas/api-schemas.ts`), standardized `{ data: ... }` / `{ error: ... }` response envelopes (`src/lib/api-utils.ts`), fail-fast application-level authorization, and sliding-window rate limiting (`api_rate_limits`).
@@ -45,15 +49,18 @@ MultiDrive is a unified multi-account cloud storage aggregator designed around a
 - Background job schema DDL (`upload_jobs`, `migration_jobs`, `delete_jobs`, `archive_jobs`) with unique idempotency constraints `UNIQUE(user_id, idempotency_key)` and RLS policies.
 - Core job engine primitives (`src/lib/job-engine.ts`) with atomic worker leasing, exponential backoff, cooperative cancellation, and strict state machine validation (`PENDING` -> `RUNNING` -> `VERIFYING` -> `COMPLETED`).
 - Concrete job handlers for Uploads, Cross-Account Migrations (enforcing **Migration Hard Rule §8.1**), Deletions, and Archive bundling.
-- Age-thresholded background reconciliation sweep engine (`src/lib/jobs/reconciliation-sweep.ts`).
-- Executed 21-scenario acceptance matrix (`tests/phase5-jobs.test.ts`) against live PostgreSQL database: **`21/21 PASSED`**.
+- Executed 21-scenario acceptance matrix (`tests/phase5-jobs.test.ts`): **`21/21 PASSED`**.
 
 ### Phase 6: API, Validation, Authorization & Performance
 - Zod validation schemas (`src/lib/schemas/api-schemas.ts`) for all POST, PUT, and PATCH endpoints.
 - Standardized API response envelope wrappers (`successResponse`, `errorResponse`, `handleApiError`).
-- Fail-fast cross-tenant authorization checks returning `403 Forbidden` / `404 Not Found`.
 - Sliding-window rate limiting engine (`api_rate_limits` table + in-memory fallback) returning `429 Too Many Requests`.
-- Refactored all 16 API route handlers in `src/app/api/`.
 - Executed Phase 6 API & Security suite (`tests/phase6-api.test.ts`): **`12/12 PASSED`**.
-- Re-executed Phase 5 Job Engine suite: **`21/21 PASSED`**.
-- Next.js production build: 22 dynamic/static routes compiled cleanly with 0 TypeScript/Next.js errors.
+
+### Phase 7: Production Authentication, Routing & UX Shell
+- Supabase SSR cookie session management (`src/lib/supabase/middleware.ts`) and root Edge Middleware (`middleware.ts`).
+- PKCE OAuth Callback Handler (`src/app/api/auth/callback/route.ts`).
+- Routing hierarchy: Marketing Landing Page (`/`), Auth Portal UI (`/login`), Protected Dashboard (`/dashboard`).
+- Executed Phase 7 Auth & Routing suite (`tests/phase7-auth.test.ts`): **`5/5 PASSED`**.
+- Re-executed Phase 6 suite: **`12/12 PASSED`**.
+- Production Build: 25 static/dynamic routes & Edge Middleware compiled cleanly in 56s.

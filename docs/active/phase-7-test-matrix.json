@@ -1,0 +1,39 @@
+{
+  "phase": 7,
+  "timestamp": "2026-09-01T20:05:46.265Z",
+  "total_tests": 5,
+  "passed": 5,
+  "failed": 0,
+  "tests": [
+    {
+      "id": "middleware-matcher-regex",
+      "description": "Middleware matcher correctly evaluates application routes and excludes static assets & images",
+      "result": "pass",
+      "details": "Dashboard: true, Static Excluded: true"
+    },
+    {
+      "id": "route-protection-unauthenticated",
+      "description": "Unauthenticated request to /dashboard redirects to /login?next=/dashboard",
+      "result": "pass",
+      "details": "Redirected: true, Destination: /login?next=%2Fdashboard"
+    },
+    {
+      "id": "auth-redirection-authenticated",
+      "description": "Authenticated user navigating to /login is automatically redirected to /dashboard",
+      "result": "pass",
+      "details": "Redirected: true, Destination: /dashboard"
+    },
+    {
+      "id": "pkce-oauth-callback-redirection",
+      "description": "PKCE callback handler extracts OAuth code, exchanges session, and redirects to destination",
+      "result": "pass",
+      "details": "Code Destination: /dashboard, Error Destination: /login?error=access_denied"
+    },
+    {
+      "id": "zod-auth-input-validation",
+      "description": "Auth portal enforces valid email address format and minimum 6-character password",
+      "result": "pass",
+      "details": "Valid Email: true, Invalid Email Rejected: true"
+    }
+  ]
+}
