@@ -1,8 +1,8 @@
 # MultiDrive Project State
 
-**Current Phase**: Ready for Phase 6.  
+**Current Phase**: Ready for Phase 7 (Frontend UX & Multi-Account Interface).  
 **Last Updated**: September 2, 2026  
-**Repository State**: Clean, zero-warning production build with 100% test pass rate.
+**Repository State**: Clean, zero-warning production build with 100% test pass rate across all suites.
 
 ---
 
@@ -13,6 +13,7 @@ MultiDrive is a unified multi-account cloud storage aggregator designed around a
 - **Frontend & App Layer**: Built with **Next.js 16 (App Router)** and **React 19** using Vanilla CSS, Tailwind, and Lucide icons.
 - **Backend & Database**: **Supabase (PostgreSQL)** utilizing Row Level Security (RLS) policies, database-level cross-user ownership enforcement triggers (`check_file_records_ownership()`, `check_job_ownership()`), and atomic PL/pgSQL capacity selection stored procedures (`create_storage_reservation_atomic`).
 - **Storage Paradigm**: **1:1 Logical-to-Physical Mapping**. Each logical `file_records` entry corresponds to exactly 1 physical object stored on 1 connected Google Drive account (`connected_accounts`), eliminating multi-part file splitting or chunk metadata overhead.
+- **API & Validation Layer (Phase 6)**: Strict Zod schema input validation (`src/lib/schemas/api-schemas.ts`), standardized `{ data: ... }` / `{ error: ... }` response envelopes (`src/lib/api-utils.ts`), fail-fast application-level authorization, and sliding-window rate limiting (`api_rate_limits`).
 - **Security & Encryption**: OAuth refresh tokens and sensitive credentials are encrypted using authenticated **AES-256-GCM** encryption primitives (`src/lib/vault.ts`).
 - **Resumable Background Job Engine**: Asynchronous, fault-tolerant job envelope framework (`upload_jobs`, `migration_jobs`, `delete_jobs`, `archive_jobs`) featuring atomic worker lease acquisition (`acquireJobLease`), strict state machine validation (`PENDING` -> `RUNNING` -> `VERIFYING` -> `COMPLETED`), exponential backoff with jitter, cooperative cancellation, and age-thresholded reconciliation sweeps.
 
@@ -45,5 +46,14 @@ MultiDrive is a unified multi-account cloud storage aggregator designed around a
 - Core job engine primitives (`src/lib/job-engine.ts`) with atomic worker leasing, exponential backoff, cooperative cancellation, and strict state machine validation (`PENDING` -> `RUNNING` -> `VERIFYING` -> `COMPLETED`).
 - Concrete job handlers for Uploads, Cross-Account Migrations (enforcing **Migration Hard Rule §8.1**), Deletions, and Archive bundling.
 - Age-thresholded background reconciliation sweep engine (`src/lib/jobs/reconciliation-sweep.ts`).
-- Job REST API routes (`/api/jobs/upload`, `/api/jobs/migration`, `/api/jobs/delete`, `/api/jobs/archive`, `/api/jobs/[id]/cancel`, `/api/jobs/[id]`).
 - Executed 21-scenario acceptance matrix (`tests/phase5-jobs.test.ts`) against live PostgreSQL database: **`21/21 PASSED`**.
+
+### Phase 6: API, Validation, Authorization & Performance
+- Zod validation schemas (`src/lib/schemas/api-schemas.ts`) for all POST, PUT, and PATCH endpoints.
+- Standardized API response envelope wrappers (`successResponse`, `errorResponse`, `handleApiError`).
+- Fail-fast cross-tenant authorization checks returning `403 Forbidden` / `404 Not Found`.
+- Sliding-window rate limiting engine (`api_rate_limits` table + in-memory fallback) returning `429 Too Many Requests`.
+- Refactored all 16 API route handlers in `src/app/api/`.
+- Executed Phase 6 API & Security suite (`tests/phase6-api.test.ts`): **`12/12 PASSED`**.
+- Re-executed Phase 5 Job Engine suite: **`21/21 PASSED`**.
+- Next.js production build: 22 dynamic/static routes compiled cleanly with 0 TypeScript/Next.js errors.

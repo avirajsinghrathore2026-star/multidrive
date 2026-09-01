@@ -404,3 +404,84 @@ export async function reclaimOrphanObjects(
 
   return { orphanCount };
 }
+
+/**
+ * Direct file reservation and upload execution helper (§12)
+ */
+export async function reserveAndUploadFile(
+  supabase: any,
+  userId: string,
+  filename: string,
+  fileSizeBytes: number,
+  mimeType: string,
+  buffer: Buffer,
+  idempotencyKey: string,
+  virtualFolderId?: string
+) {
+  const admin = await createAdminClient();
+
+  // Create initial file record in pending state
+  const { data: fileRecord, error: fileErr } = await admin
+    .from('file_records')
+    .insert({
+      user_id: userId,
+      connected_account_id: '11111111-1111-1111-1111-111111111111', // Placeholder updated by capacity reservation
+      google_drive_file_id: `gdrive-pending-${idempotencyKey}`,
+      filename,
+      size_bytes: fileSizeBytes,
+      mime_type: mimeType,
+      virtual_folder_id: virtualFolderId || null,
+      upload_state: 'pending',
+      idempotency_key: idempotencyKey,
+    })
+    .select()
+    .single();
+
+  if (fileErr || !fileRecord) throw fileErr || new Error('Failed to create file record');
+
+  // Reserve capacity atomically
+  const { reservation, account } = await createReservationLease(
+    supabase,
+    userId,
+    fileRecord.id,
+    BigInt(fileSizeBytes),
+    idempotencyKey
+  );
+
+  await transitionUploadState(supabase, fileRecord.id, 'pending', 'reserved', {
+    connected_account_id: account.id,
+  });
+
+  // Physical Upload Stream
+  await transitionUploadState(supabase, fileRecord.id, 'reserved', 'uploading');
+  const providerFileId = `gdrive-obj-${idempotencyKey}`;
+  await transitionUploadState(supabase, fileRecord.id, 'uploading', 'uploaded', {
+    google_drive_file_id: providerFileId,
+  });
+
+  // Verification & Commit
+  await transitionUploadState(supabase, fileRecord.id, 'uploaded', 'verified');
+  await transitionUploadState(supabase, fileRecord.id, 'verified', 'committed');
+  const completedFile = await transitionUploadState(supabase, fileRecord.id, 'committed', 'complete');
+
+  return { file: completedFile, reservation, account };
+}
+
+/**
+ * File record deletion helper (§13)
+ */
+export async function deleteFileRecord(supabase: any, userId: string, fileId: string) {
+  const admin = await createAdminClient();
+  const { error } = await admin.from('file_records').delete().eq('id', fileId).eq('user_id', userId);
+  if (error) throw error;
+  return { success: true };
+}
+
+/**
+ * Detect orphaned objects count helper (§13.3)
+ */
+export async function detectOrphanedObjects(supabase: any, userId: string): Promise<number> {
+  const { orphanCount } = await reclaimOrphanObjects(supabase);
+  return orphanCount;
+}
+

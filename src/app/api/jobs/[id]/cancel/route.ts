@@ -1,61 +1,31 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/server';
-import { JobType } from '@/lib/job-engine';
+import { NextRequest } from 'next/server';
+import { requireUser } from '@/lib/auth';
+import { requestJobCancellation } from '@/lib/job-engine';
+import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils';
 
-export async function POST(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user } = await requireUser();
-    const resolvedParams = await params;
-    const jobId = resolvedParams.id;
+    const { user, supabase } = await requireUser();
+    const { id } = await params;
 
-    const searchParams = request.nextUrl.searchParams;
-    const jobType = (searchParams.get('type') || 'upload_jobs') as JobType;
+    const tables = ['upload_jobs', 'migration_jobs', 'delete_jobs', 'archive_jobs'] as const;
 
-    const admin = await createAdminClient();
-    const nowIso = new Date().toISOString();
+    for (const table of tables) {
+      const { data: job } = await supabase
+        .from(table)
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-    const { data: job, error: fetchErr } = await admin
-      .from(jobType)
-      .select('*')
-      .eq('id', jobId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (fetchErr || !job) {
-      return NextResponse.json({ error: 'Job non-existent or access denied' }, { status: 404 });
+      if (job) {
+        const updatedJob = await requestJobCancellation(supabase, table, id, user.id);
+        return successResponse({ job: updatedJob });
+      }
     }
 
-    if (job.state === 'COMPLETED') {
-      return NextResponse.json(
-        { error: 'CANCELLATION_REJECTED: Job has passed point of no return and is already COMPLETED' },
-        { status: 400 }
-      );
-    }
-
-    const { data: updatedJob, error: updateErr } = await admin
-      .from(jobType)
-      .update({
-        cancel_requested_at: nowIso,
-        updated_at: nowIso,
-      })
-      .eq('id', jobId)
-      .select('*')
-      .single();
-
-    if (updateErr) {
-      return NextResponse.json({ error: 'Failed to request job cancellation' }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, job: updatedJob });
+    return errorResponse('NOT_FOUND', `Job ${id} not found`, undefined, 404);
   } catch (err: any) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('Job cancellation handler error:', err);
-    return NextResponse.json({ error: 'Failed to request cancellation' }, { status: 500 });
+    return handleApiError(err);
   }
 }

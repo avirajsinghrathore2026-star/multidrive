@@ -1,23 +1,14 @@
-import { NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
-import { reconcileExpiredReservations } from '@/lib/storage-engine';
+import { NextRequest } from 'next/server';
+import { requireUser } from '@/lib/auth';
+import { runReconciliationSweep } from '@/lib/jobs/reconciliation-sweep';
+import { successResponse, handleApiError } from '@/lib/api-utils';
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
-    const { supabase } = await requireUser();
-
-    const result = await reconcileExpiredReservations(supabase);
-
-    return NextResponse.json({
-      success: true,
-      message: `Reconciled ${result.reclaimedCount} expired storage reservations.`,
-      reclaimedCount: result.reclaimedCount,
-    });
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('Reservation reconciliation sweep error:', err);
-    return NextResponse.json({ error: 'Failed to run reservation reconciliation sweep' }, { status: 500 });
+    await requireUser();
+    const results = await runReconciliationSweep();
+    return successResponse({ summary: results });
+  } catch (err: any) {
+    return handleApiError(err);
   }
 }

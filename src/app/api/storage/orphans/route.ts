@@ -1,23 +1,14 @@
-import { NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
-import { reclaimOrphanObjects } from '@/lib/storage-engine';
+import { NextRequest } from 'next/server';
+import { requireUser } from '@/lib/auth';
+import { detectOrphanedObjects } from '@/lib/storage-engine';
+import { successResponse, handleApiError } from '@/lib/api-utils';
 
-export async function POST() {
+export async function GET(request: NextRequest) {
   try {
-    const { supabase } = await requireUser();
-
-    const result = await reclaimOrphanObjects(supabase);
-
-    return NextResponse.json({
-      success: true,
-      message: `Identified and flagged ${result.orphanCount} orphaned storage objects.`,
-      orphanCount: result.orphanCount,
-    });
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('Orphan object sweep error:', err);
-    return NextResponse.json({ error: 'Failed to run orphan object sweep' }, { status: 500 });
+    const { user, supabase } = await requireUser();
+    const count = await detectOrphanedObjects(supabase, user.id);
+    return successResponse({ count, message: `Detected ${count} orphaned file record(s)` });
+  } catch (err: any) {
+    return handleApiError(err);
   }
 }

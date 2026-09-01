@@ -259,3 +259,51 @@ export async function transitionJobState(
 export function isCancellationRequested(job: JobEnvelope): boolean {
   return !!job.cancel_requested_at;
 }
+
+/**
+ * Requests cooperative job cancellation before point-of-no-return (§17).
+ */
+export async function requestJobCancellation(
+  supabase: any,
+  jobTable: JobType,
+  jobId: string,
+  userId: string
+): Promise<JobEnvelope> {
+  const admin = await createAdminClient();
+  const { data: job, error: fetchErr } = await admin
+    .from(jobTable)
+    .select('*')
+    .eq('id', jobId)
+    .eq('user_id', userId)
+    .single();
+
+  if (fetchErr || !job) {
+    throw new Error('Job not found or access denied');
+  }
+
+  if (job.state === 'COMPLETED') {
+    throw new Error('CANCELLATION_REJECTED: Cannot cancel an already COMPLETED job');
+  }
+
+  if (job.state === 'CANCELLED') {
+    return job;
+  }
+
+  if (job.state === 'PENDING') {
+    return await transitionJobState(admin, jobTable, jobId, 'PENDING', 'CANCELLED', {
+      last_error_code: 'CANCELLED_BY_USER',
+      last_error_detail: 'Job cancelled by user before execution',
+    });
+  }
+
+  const { data: updatedJob, error } = await admin
+    .from(jobTable)
+    .update({ cancel_requested_at: new Date().toISOString() })
+    .eq('id', jobId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return updatedJob;
+}
+

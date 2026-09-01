@@ -1,58 +1,44 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
+import { requireUser, requireOwnedFile } from '@/lib/auth';
+import { successResponse, errorResponse, handleApiError, parseAndValidateJson, checkRateLimit } from '@/lib/api-utils';
+import { ShareLinkSchema } from '@/lib/schemas/api-schemas';
 import crypto from 'crypto';
-import { requireUser, requireOwnedFile, AuthError } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
     const { user, supabase } = await requireUser();
-    const body = await request.json();
-    const { fileId, durationHours = 24, password } = body;
 
-    if (!fileId) {
-      return NextResponse.json({ error: 'fileId is required' }, { status: 400 });
+    // Rate Limiting Check
+    const rateLimit = await checkRateLimit(`share_link:${user.id}`, 20, 60);
+    if (!rateLimit.allowed) {
+      return errorResponse('RATE_LIMIT_EXCEEDED', 'Share link creation rate limit exceeded.', { resetSeconds: rateLimit.resetSeconds }, 429);
     }
 
-    // Verify file ownership strictly
-    await requireOwnedFile(supabase, user.id, fileId);
+    const validated = await parseAndValidateJson(request, ShareLinkSchema);
 
-    // Generate random secure token
+    // Fail Fast API Authorization Check (§7)
+    await requireOwnedFile(supabase, user.id, validated.fileId);
+
     const token = crypto.randomBytes(16).toString('hex');
-    const expiresAt = new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
+    const expiresAt = validated.expiresInHours
+      ? new Date(Date.now() + validated.expiresInHours * 3600 * 1000).toISOString()
+      : null;
 
-    let passwordHash: string | null = null;
-    if (password && password.trim()) {
-      passwordHash = crypto.createHash('sha256').update(password.trim()).digest('hex');
-    }
-
-    const { error: linkErr } = await supabase
+    const { data, error } = await supabase
       .from('shared_links')
       .insert({
-        file_id: fileId,
+        file_id: validated.fileId,
         token,
+        password_hash: validated.password ? crypto.createHash('sha256').update(validated.password).digest('hex') : null,
         expires_at: expiresAt,
-        password_hash: passwordHash,
-      });
+      })
+      .select('*')
+      .single();
 
-    if (linkErr) {
-      console.error('Failed to create shared link:', linkErr);
-      return NextResponse.json({ error: 'Failed to create share link' }, { status: 500 });
-    }
+    if (error) throw error;
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-    const publicUrl = `${appUrl}/api/share/${token}`;
-
-    return NextResponse.json({
-      success: true,
-      token,
-      publicUrl,
-      expiresAt,
-      hasPassword: !!passwordHash,
-    });
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('Create share link error:', err);
-    return NextResponse.json({ error: 'Failed to create share link' }, { status: 500 });
+    return successResponse({ shareLink: data, url: `${process.env.NEXT_PUBLIC_APP_URL || ''}/api/share/${token}` }, 201);
+  } catch (err: any) {
+    return handleApiError(err);
   }
 }

@@ -1,38 +1,29 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
-import { createAdminClient } from '@/lib/supabase/server';
-import { JobType } from '@/lib/job-engine';
+import { NextRequest } from 'next/server';
+import { requireUser } from '@/lib/auth';
+import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils';
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user } = await requireUser();
-    const resolvedParams = await params;
-    const jobId = resolvedParams.id;
+    const { user, supabase } = await requireUser();
+    const { id } = await params;
 
-    const searchParams = request.nextUrl.searchParams;
-    const jobType = (searchParams.get('type') || 'upload_jobs') as JobType;
+    const tables = ['upload_jobs', 'migration_jobs', 'delete_jobs', 'archive_jobs'] as const;
 
-    const admin = await createAdminClient();
+    for (const table of tables) {
+      const { data, error } = await supabase
+        .from(table)
+        .select('*')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .maybeSingle();
 
-    const { data: job, error } = await admin
-      .from(jobType)
-      .select('*')
-      .eq('id', jobId)
-      .eq('user_id', user.id)
-      .single();
-
-    if (error || !job) {
-      return NextResponse.json({ error: 'Job non-existent or access denied' }, { status: 404 });
+      if (data) {
+        return successResponse({ job: data, job_type: table });
+      }
     }
 
-    return NextResponse.json({ success: true, job });
+    return errorResponse('NOT_FOUND', `Job ${id} not found`, undefined, 404);
   } catch (err: any) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    return NextResponse.json({ error: 'Failed to query job status' }, { status: 500 });
+    return handleApiError(err);
   }
 }

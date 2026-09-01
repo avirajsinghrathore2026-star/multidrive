@@ -1,0 +1,219 @@
+{
+  "phase": 5,
+  "timestamp": "2026-09-01T19:35:41.683Z",
+  "total_tests": 21,
+  "passed": 21,
+  "failed": 0,
+  "tests": [
+    {
+      "id": "job-idempotency-key-reuse",
+      "description": "Duplicate job creation carrying same idempotency key returns existing job",
+      "expected": "Existing Job Returned",
+      "actual": "Existing Job Returned",
+      "result": "pass",
+      "final_job_state": "PENDING",
+      "final_file_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "worker-lease-atomic-acquisition",
+      "description": "Job lease acquired atomically; second worker cannot acquire same RUNNING job",
+      "expected": "Lease Acquired By Worker 1 Only",
+      "actual": "Lease Acquired By Worker 1 Only",
+      "result": "pass",
+      "final_job_state": "RUNNING",
+      "final_file_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "worker-crash-lease-expiration",
+      "description": "Worker crash leaves lease to expire; reconciliation sweep reclaims job to PENDING",
+      "expected": "Reclaimed to PENDING",
+      "actual": "Reclaimed to PENDING",
+      "result": "pass",
+      "final_job_state": "PENDING",
+      "final_file_state": "none",
+      "error_code_observed": "WORKER_LEASE_EXPIRED"
+    },
+    {
+      "id": "upload-job-crash-1-percent",
+      "description": "Upload job crash at ~1% (before reservation) recovers cleanly to COMPLETED",
+      "expected": "COMPLETED Without Data Loss",
+      "actual": "COMPLETED Without Data Loss",
+      "result": "pass",
+      "final_job_state": "COMPLETED",
+      "final_file_state": "complete",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "upload-job-crash-50-percent",
+      "description": "Upload job crash at ~50% (mid-transfer) recovers via idempotent retry",
+      "expected": "Recovered Idempotently",
+      "actual": "Recovered Idempotently",
+      "result": "pass",
+      "final_job_state": "COMPLETED",
+      "final_file_state": "complete",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "upload-job-crash-99-percent",
+      "description": "Upload job crash at ~99% recovers to COMPLETED without re-uploading",
+      "expected": "Recovered to COMPLETED",
+      "actual": "Recovered to COMPLETED",
+      "result": "pass",
+      "final_job_state": "COMPLETED",
+      "final_file_state": "complete",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "migration-job-crash-1-percent",
+      "description": "Migration job crash at ~1% leaves source untouched, job resumable",
+      "expected": "Source Untouched & Resumable",
+      "actual": "Source Untouched & Resumable",
+      "result": "pass",
+      "final_job_state": "PENDING",
+      "final_file_state": "complete",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "migration-job-crash-50-percent",
+      "description": "Migration job crash at ~50% detects destination state before acting",
+      "expected": "Destination State Checked",
+      "actual": "Destination State Checked",
+      "result": "pass",
+      "final_job_state": "PENDING",
+      "final_file_state": "complete",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "migration-job-crash-99-percent",
+      "description": "Migration job crash at ~99% deletes source on resume, completes with no data loss",
+      "expected": "Source Deleted & Completed",
+      "actual": "Source Deleted & Completed",
+      "result": "pass",
+      "final_job_state": "VERIFYING",
+      "final_file_state": "complete",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "migration-job-checksum-mismatch",
+      "description": "Migration verification mismatch does NOT delete source; job fails cleanly",
+      "expected": "Source Preserved & Job FAILED",
+      "actual": "Source Preserved & Job FAILED",
+      "result": "pass",
+      "final_job_state": "FAILED",
+      "final_file_state": "intact",
+      "error_code_observed": "VERIFICATION_MISMATCH"
+    },
+    {
+      "id": "delete-job-idempotent-retry",
+      "description": "Delete job retried after provider returns 404 treated as success",
+      "expected": "Treated As Success (COMPLETED)",
+      "actual": "Treated As Success (COMPLETED)",
+      "result": "pass",
+      "final_job_state": "COMPLETED",
+      "final_file_state": "deleted",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "delete-job-confirmation-recheck",
+      "description": "Delete job confirmation step independently re-checks object absence",
+      "expected": "Object Absence Confirmed & Row Removed",
+      "actual": "Object Absence Confirmed & Row Removed",
+      "result": "pass",
+      "final_job_state": "COMPLETED",
+      "final_file_state": "deleted",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "archive-job-partial-file-failure",
+      "description": "Archive job with invalid source file fails cleanly without marking truncated archive complete",
+      "expected": "Fails Cleanly (FAILED)",
+      "actual": "Fails Cleanly (FAILED)",
+      "result": "pass",
+      "final_job_state": "FAILED",
+      "final_file_state": "none",
+      "error_code_observed": "PARTIAL_FAILURE"
+    },
+    {
+      "id": "archive-job-crash-resume",
+      "description": "Archive job crash resumes from last completed file, not from scratch",
+      "expected": "Resumes From Last Completed File",
+      "actual": "Resumes From Last Completed File",
+      "result": "pass",
+      "final_job_state": "PENDING",
+      "final_file_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "retry-exponential-backoff",
+      "description": "Retry backoff interval grows exponentially with random jitter across attempts",
+      "expected": "Interval Grows Exponentially (2s -> 4s -> 8s+)",
+      "actual": "Grows Exponentially (2300ms -> 4142ms -> 8010ms)",
+      "result": "pass",
+      "final_job_state": "none",
+      "final_file_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "non-retryable-failure-immediate",
+      "description": "Non-retryable failure (checksum mismatch/security) goes straight to FAILED without retrying",
+      "expected": "Immediate FAILED Without Retry",
+      "actual": "Immediate FAILED Without Retry",
+      "result": "pass",
+      "final_job_state": "FAILED",
+      "final_file_state": "none",
+      "error_code_observed": "VERIFICATION_MISMATCH"
+    },
+    {
+      "id": "cancellation-before-point-of-no-return",
+      "description": "Cancellation before point of no return leaves system consistent and marks CANCELLED",
+      "expected": "Marked CANCELLED Cleanly",
+      "actual": "Marked CANCELLED Cleanly",
+      "result": "pass",
+      "final_job_state": "CANCELLED",
+      "final_file_state": "none",
+      "error_code_observed": "CANCELLED_BY_USER"
+    },
+    {
+      "id": "cancellation-after-point-of-no-return",
+      "description": "Cancellation requested after point of no return is rejected, operation remains COMPLETED",
+      "expected": "Cancellation Rejected & COMPLETED Maintained",
+      "actual": "Cancellation Rejected & COMPLETED Maintained",
+      "result": "pass",
+      "final_job_state": "COMPLETED",
+      "final_file_state": "complete",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "orphan-sweep-age-threshold",
+      "description": "Orphan sweep reclaims object past age threshold and leaves too-recent one alone",
+      "expected": "Old Reclaimed (orphaned), Young Left Alone (uploaded)",
+      "actual": "Old Reclaimed (orphaned), Young Left Alone (uploaded)",
+      "result": "pass",
+      "final_job_state": "none",
+      "final_file_state": "orphaned",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "illegal-job-state-transition",
+      "description": "Illegal job state transition (PENDING -> COMPLETED directly) is structurally rejected",
+      "expected": "Throws ILLEGAL_JOB_TRANSITION",
+      "actual": "Throws ILLEGAL_JOB_TRANSITION",
+      "result": "pass",
+      "final_job_state": "PENDING",
+      "final_file_state": "none",
+      "error_code_observed": "ILLEGAL_JOB_TRANSITION"
+    },
+    {
+      "id": "job-file-state-consistency",
+      "description": "Job state and file_records.upload_state maintain consistent lifecycle alignment",
+      "expected": "Job and File State Aligned (PENDING)",
+      "actual": "Job and File State Aligned (PENDING)",
+      "result": "pass",
+      "final_job_state": "PENDING",
+      "final_file_state": "pending",
+      "error_code_observed": "NONE"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "phase": 6,
+  "timestamp": "2026-09-01T19:34:38.685Z",
+  "total_tests": 12,
+  "passed": 12,
+  "failed": 0,
+  "tests": [
+    {
+      "id": "zod-upload-job-validation",
+      "description": "UploadJobSchema rejects negative sizeBytes and validates positive integer",
+      "result": "pass",
+      "details": "Valid: true, Invalid Rejected: true"
+    },
+    {
+      "id": "zod-migration-job-validation",
+      "description": "MigrationJobSchema enforces valid UUID format on fileId and destinationAccountId",
+      "result": "pass",
+      "details": "Valid UUID: true, Bad UUID Rejected: true"
+    },
+    {
+      "id": "zod-delete-job-validation",
+      "description": "DeleteJobSchema rejects non-UUID fileId",
+      "result": "pass",
+      "details": "Valid: true, Invalid Rejected: true"
+    },
+    {
+      "id": "zod-archive-job-validation",
+      "description": "ArchiveJobSchema rejects empty fileIds array",
+      "result": "pass",
+      "details": "Valid Array: true, Empty Array Rejected: true"
+    },
+    {
+      "id": "zod-create-folder-validation",
+      "description": "CreateFolderSchema rejects empty string folder name",
+      "result": "pass",
+      "details": "Valid Name: true, Empty Name Rejected: true"
+    },
+    {
+      "id": "zod-share-link-validation",
+      "description": "ShareLinkSchema rejects negative expiration hours",
+      "result": "pass",
+      "details": "Valid Expiry: true, Negative Expiry Rejected: true"
+    },
+    {
+      "id": "zod-batch-operation-validation",
+      "description": "BatchOperationSchema rejects unsupported batch action enum values",
+      "result": "pass",
+      "details": "Valid Enum: true, Bad Enum Rejected: true"
+    },
+    {
+      "id": "api-success-envelope-structure",
+      "description": "successResponse wraps payload in { data: ... } with status 200",
+      "result": "pass",
+      "details": "Data Key Present: true"
+    },
+    {
+      "id": "api-error-envelope-structure",
+      "description": "errorResponse formats payload as { error: { code, message, details } } with status 400",
+      "result": "pass",
+      "details": "Error Code: INVALID_ARGUMENT"
+    },
+    {
+      "id": "global-error-handler-zod",
+      "description": "handleApiError maps ZodError to 400 Bad Request with code INVALID_ARGUMENT",
+      "result": "pass",
+      "details": "Status: 400, Code: INVALID_ARGUMENT"
+    },
+    {
+      "id": "global-error-handler-auth",
+      "description": "handleApiError maps AuthError(403) to 403 Forbidden with code FORBIDDEN",
+      "result": "pass",
+      "details": "Status: 403, Code: FORBIDDEN"
+    },
+    {
+      "id": "rate-limit-sliding-window",
+      "description": "checkRateLimit permits requests up to max capacity (2) and blocks excess (3rd request) with 429 status",
+      "result": "pass",
+      "details": "Req1 Allowed: true, Req2 Allowed: true, Req3 Blocked: true"
+    }
+  ]
+}

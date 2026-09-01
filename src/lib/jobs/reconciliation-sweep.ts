@@ -114,3 +114,6 @@ export async function runJobReconciliationSweep(
     details,
   };
 }
+
+export const runReconciliationSweep = runJobReconciliationSweep;
+

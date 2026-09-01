@@ -1,44 +1,48 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
+import { NextRequest } from 'next/server';
+import { requireUser, requireOwnedFile } from '@/lib/auth';
 import { createOrReuseJob, acquireJobLease } from '@/lib/job-engine';
 import { processArchiveJob } from '@/lib/jobs/archive-handler';
+import { successResponse, errorResponse, handleApiError, parseAndValidateJson, checkRateLimit } from '@/lib/api-utils';
+import { ArchiveJobSchema } from '@/lib/schemas/api-schemas';
 import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
     const { user, supabase } = await requireUser();
-    const body = await request.json();
-    const { fileIds, idempotencyKey: clientKey } = body;
 
-    if (!fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
-      return NextResponse.json({ error: 'fileIds array is required' }, { status: 400 });
+    // Rate Limiting Check (§5, §7)
+    const rateLimit = await checkRateLimit(`job_archive:${user.id}`, 10, 60);
+    if (!rateLimit.allowed) {
+      return errorResponse('RATE_LIMIT_EXCEEDED', 'Archive job rate limit exceeded.', { resetSeconds: rateLimit.resetSeconds }, 429);
     }
 
-    const sortedIds = [...fileIds].sort().join(',');
-    const idempotencyKey = clientKey || `idemp-job-archive-${crypto.createHash('md5').update(sortedIds).digest('hex')}`;
+    const validated = await parseAndValidateJson(request, ArchiveJobSchema);
+
+    // Fail Fast API Authorization Check on each file ID (§7)
+    for (const fileId of validated.fileIds) {
+      await requireOwnedFile(supabase, user.id, fileId);
+    }
+
+    const idempotencyKey = validated.idempotencyKey || `idemp-job-archive-${crypto.randomUUID()}`;
 
     const { job, isReused } = await createOrReuseJob(supabase, 'archive_jobs', user.id, idempotencyKey, {
-      file_record_ids: fileIds,
+      file_record_ids: validated.fileIds,
     });
 
     if (job.state === 'COMPLETED') {
-      return NextResponse.json({ success: true, job, isReused: true });
+      return successResponse({ job, isReused: true });
     }
 
     const workerId = crypto.randomUUID();
     const leasedJob = await acquireJobLease(supabase, 'archive_jobs', job.id, workerId);
 
     if (!leasedJob) {
-      return NextResponse.json({ success: true, job, isReused: true, message: 'Job leased by another worker' });
+      return successResponse({ job, isReused: true, message: 'Job leased by another worker' });
     }
 
     const completedJob = await processArchiveJob(job.id);
-    return NextResponse.json({ success: true, job: completedJob, isReused });
+    return successResponse({ job: completedJob, isReused });
   } catch (err: any) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('API Archive Job handler error:', err);
-    return NextResponse.json({ error: err.message || 'Archive job processing failed' }, { status: 500 });
+    return handleApiError(err);
   }
 }

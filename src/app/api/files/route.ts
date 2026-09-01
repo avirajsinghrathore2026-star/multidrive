@@ -1,48 +1,33 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, requireOwnedFolder, AuthError } from '@/lib/auth';
+import { NextRequest } from 'next/server';
+import { requireUser } from '@/lib/auth';
+import { successResponse, handleApiError } from '@/lib/api-utils';
 
 export async function GET(request: NextRequest) {
   try {
     const { user, supabase } = await requireUser();
-
     const searchParams = request.nextUrl.searchParams;
     const folderId = searchParams.get('folderId');
-
-    // If a specific folder is requested, verify folder ownership first
-    if (folderId && folderId !== 'root' && folderId !== 'all') {
-      await requireOwnedFolder(supabase, user.id, folderId);
-    }
+    const inTrash = searchParams.get('inTrash') === 'true';
 
     let query = supabase
       .from('file_records')
-      .select(`
-        *,
-        connected_accounts (
-          google_email
-        )
-      `)
+      .select('*')
       .eq('user_id', user.id)
-      .eq('in_trash', false);
+      .eq('in_trash', inTrash)
+      .eq('upload_state', 'complete');
 
-    if (folderId === 'root' || !folderId) {
-      query = query.is('virtual_folder_id', null);
-    } else if (folderId !== 'all') {
+    if (folderId) {
       query = query.eq('virtual_folder_id', folderId);
+    } else if (folderId === 'null' || !folderId) {
+      query = query.is('virtual_folder_id', null);
     }
 
-    const { data: files, error } = await query.order('uploaded_at', { ascending: false });
+    const { data, error } = await query.order('uploaded_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching file records:', error);
-      return NextResponse.json({ error: 'Failed to fetch files' }, { status: 500 });
-    }
+    if (error) throw error;
 
-    return NextResponse.json({ files: files || [] });
-  } catch (err) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('Files GET error:', err);
-    return NextResponse.json({ error: 'Failed to fetch files' }, { status: 500 });
+    return successResponse({ files: data });
+  } catch (err: any) {
+    return handleApiError(err);
   }
 }

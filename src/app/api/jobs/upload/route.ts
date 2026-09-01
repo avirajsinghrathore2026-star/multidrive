@@ -1,12 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
+import { NextRequest } from 'next/server';
+import { requireUser } from '@/lib/auth';
 import { createOrReuseJob, acquireJobLease } from '@/lib/job-engine';
 import { processUploadJob } from '@/lib/jobs/upload-handler';
+import { successResponse, errorResponse, handleApiError, checkRateLimit } from '@/lib/api-utils';
+import { UploadJobSchema } from '@/lib/schemas/api-schemas';
 import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
     const { user, supabase } = await requireUser();
+
+    // Rate Limiting Check (§5, §7)
+    const rateLimit = await checkRateLimit(`job_upload:${user.id}`, 20, 60);
+    if (!rateLimit.allowed) {
+      return errorResponse('RATE_LIMIT_EXCEEDED', 'Upload rate limit exceeded. Please wait before retrying.', { resetSeconds: rateLimit.resetSeconds }, 429);
+    }
 
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
@@ -14,18 +22,25 @@ export async function POST(request: NextRequest) {
     const expectedMd5 = formData.get('expectedMd5') as string | null;
 
     if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      return errorResponse('INVALID_ARGUMENT', 'No file provided in form-data payload', undefined, 400);
     }
 
-    const idempotencyKey = clientKey || `idemp-job-upload-${crypto.randomUUID()}`;
+    // Validate sizeBytes and parameters via Zod Schema
+    const validated = UploadJobSchema.parse({
+      sizeBytes: file.size,
+      idempotencyKey: clientKey || undefined,
+      expectedMd5: expectedMd5 || undefined,
+    });
+
+    const idempotencyKey = validated.idempotencyKey || `idemp-job-upload-${crypto.randomUUID()}`;
 
     // Create or reuse upload job (§13)
     const { job, isReused } = await createOrReuseJob(supabase, 'upload_jobs', user.id, idempotencyKey, {
-      size_bytes: file.size,
+      size_bytes: validated.sizeBytes,
     });
 
     if (job.state === 'COMPLETED') {
-      return NextResponse.json({ success: true, job, isReused: true });
+      return successResponse({ job, isReused: true });
     }
 
     // Acquire worker lease and process upload job
@@ -33,19 +48,15 @@ export async function POST(request: NextRequest) {
     const leasedJob = await acquireJobLease(supabase, 'upload_jobs', job.id, workerId);
 
     if (!leasedJob) {
-      return NextResponse.json({ success: true, job, isReused: true, message: 'Job leased by another worker' });
+      return successResponse({ job, isReused: true, message: 'Job leased by another worker' });
     }
 
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const completedJob = await processUploadJob(job.id, buffer, expectedMd5 || undefined);
-    return NextResponse.json({ success: true, job: completedJob, isReused });
+    const completedJob = await processUploadJob(job.id, buffer, validated.expectedMd5);
+    return successResponse({ job: completedJob, isReused });
   } catch (err: any) {
-    if (err instanceof AuthError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error('API Upload Job handler error:', err);
-    return NextResponse.json({ error: err.message || 'Upload job processing failed' }, { status: 500 });
+    return handleApiError(err);
   }
 }
