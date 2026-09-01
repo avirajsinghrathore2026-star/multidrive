@@ -1,16 +1,26 @@
 import { google } from 'googleapis';
-import { Readable } from 'stream';
-import { getServerConfig } from '@/lib/config';
+import { getServerConfig } from './config';
 
-const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+const SCOPES = [
+  'https://www.googleapis.com/auth/drive.file',
+  'https://www.googleapis.com/auth/drive.readonly',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
 
 export function getOAuth2Client() {
-  const { googleClientId, googleClientSecret, appUrl } = getServerConfig();
-  const redirectUri = `${appUrl}/api/auth/google/callback`;
+  const config = getServerConfig();
+
+  // Strict Fail-Closed Validation
+  if (!config.googleClientId || !config.googleClientSecret) {
+    throw new Error('CONFIG ERROR: Missing Google OAuth Client ID or Client Secret.');
+  }
+
+  // Canonical redirect URI construction
+  const redirectUri = `${config.appUrl}/api/auth/google/callback`;
 
   return new google.auth.OAuth2(
-    googleClientId,
-    googleClientSecret,
+    config.googleClientId,
+    config.googleClientSecret,
     redirectUri
   );
 }
@@ -34,15 +44,17 @@ export function getAuthenticatedDriveClient(refreshToken: string) {
 export async function fetchGoogleAccountDetails(refreshToken: string) {
   const drive = getAuthenticatedDriveClient(refreshToken);
   const response = await drive.about.get({
-    fields: 'user(emailAddress), storageQuota(limit, usage)',
+    fields: 'user(emailAddress, permissionId), storageQuota(limit, usage)',
   });
 
   const userEmail = response.data.user?.emailAddress || 'Unknown Account';
+  const googleAccountId = response.data.user?.permissionId || userEmail;
   const storageLimit = parseInt(response.data.storageQuota?.limit || '16106127360', 10);
   const storageUsage = parseInt(response.data.storageQuota?.usage || '0', 10);
 
   return {
     email: userEmail,
+    googleAccountId: googleAccountId,
     storageUsedBytes: storageUsage,
     storageTotalBytes: storageLimit,
   };
@@ -52,25 +64,29 @@ export async function uploadStreamToDrive(
   refreshToken: string,
   filename: string,
   mimeType: string,
-  fileStream: Readable
+  stream: any
 ) {
   const drive = getAuthenticatedDriveClient(refreshToken);
   const response = await drive.files.create({
     requestBody: {
       name: filename,
+      mimeType: mimeType,
     },
     media: {
       mimeType: mimeType,
-      body: fileStream,
+      body: stream,
     },
     fields: 'id, name, size, mimeType',
   });
 
+  if (!response.data.id) {
+    throw new Error('Google Drive API failed to return file ID');
+  }
+
   return {
-    googleDriveFileId: response.data.id!,
-    filename: response.data.name!,
-    mimeType: response.data.mimeType!,
-    sizeBytes: parseInt(response.data.size || '0', 10),
+    googleDriveFileId: response.data.id,
+    name: response.data.name,
+    size: response.data.size,
   };
 }
 
@@ -80,36 +96,31 @@ export async function getDriveFileStream(refreshToken: string, fileId: string) {
     { fileId: fileId, alt: 'media' },
     { responseType: 'stream' }
   );
-  return response.data as Readable;
-}
-
-export async function deleteDriveFile(refreshToken: string, fileId: string) {
-  const drive = getAuthenticatedDriveClient(refreshToken);
-  await drive.files.delete({ fileId });
-}
-
-export async function renameDriveFile(refreshToken: string, fileId: string, newName: string) {
-  const drive = getAuthenticatedDriveClient(refreshToken);
-  const response = await drive.files.update({
-    fileId: fileId,
-    requestBody: {
-      name: newName,
-    },
-    fields: 'id, name',
-  });
   return response.data;
 }
 
-/**
- * Revoke Google OAuth refresh token on account disconnect.
- */
-export async function revokeGoogleToken(refreshToken: string): Promise<boolean> {
+export async function renameDriveFile(refreshToken: string, fileId: string, newFilename: string) {
+  const drive = getAuthenticatedDriveClient(refreshToken);
+  await drive.files.update({
+    fileId: fileId,
+    requestBody: {
+      name: newFilename,
+    },
+  });
+}
+
+export async function deleteDriveFile(refreshToken: string, googleDriveFileId: string) {
+  const drive = getAuthenticatedDriveClient(refreshToken);
+  await drive.files.delete({
+    fileId: googleDriveFileId,
+  });
+}
+
+export async function revokeGoogleToken(token: string) {
+  const oauth2Client = getOAuth2Client();
   try {
-    const oauth2Client = getOAuth2Client();
-    await oauth2Client.revokeToken(refreshToken);
-    return true;
+    await oauth2Client.revokeToken(token);
   } catch (err) {
-    console.error('Failed to revoke Google OAuth token:', err instanceof Error ? err.message : 'Revocation error');
-    return false;
+    console.error('Failed to revoke Google OAuth token:', err);
   }
 }

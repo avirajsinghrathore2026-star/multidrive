@@ -1,16 +1,22 @@
--- MultiDrive Phase 3 Migration: Database Architecture & Integrity (No Chunking) - Reconciled
--- Safely cleans up legacy chunk tables, reconciles column names, adds ownership triggers & disconnect protection.
+-- MultiDrive Phase 3 Migration: Database Architecture & Integrity (No Chunking) - Reconciled & Audited V3
+-- Safely cleans up legacy chunk tables, reconciles column names, adds google_account_id uniqueness, ownership triggers & disconnect protection.
 
 -- 1. Safely remove obsolete legacy file_chunks table if present
 DROP TABLE IF EXISTS file_chunks CASCADE;
 
--- 2. Add google_account_id to connected_accounts if missing
+-- 2. Add google_account_id to connected_accounts if missing and enforce uniqueness (ISSUE-06)
 DO $$
 BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.columns WHERE table_name = 'connected_accounts' AND column_name = 'google_account_id'
   ) THEN
     ALTER TABLE connected_accounts ADD COLUMN google_account_id TEXT;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'unique_user_google_account'
+  ) THEN
+    ALTER TABLE connected_accounts ADD CONSTRAINT unique_user_google_account UNIQUE(user_id, google_account_id);
   END IF;
 END $$;
 
@@ -53,14 +59,12 @@ END $$;
 -- 5. Enforce ON DELETE RESTRICT on file_records.connected_account_id (ISSUE-04)
 DO $$
 BEGIN
-  -- Drop existing cascading foreign key if present
   IF EXISTS (
     SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'file_records_connected_account_id_fkey'
   ) THEN
     ALTER TABLE file_records DROP CONSTRAINT file_records_connected_account_id_fkey;
   END IF;
 
-  -- Add RESTRICT foreign key
   ALTER TABLE file_records ADD CONSTRAINT file_records_connected_account_id_fkey
     FOREIGN KEY (connected_account_id) REFERENCES connected_accounts(id) ON DELETE RESTRICT;
 EXCEPTION
@@ -129,6 +133,7 @@ CREATE TRIGGER trg_enforce_file_records_ownership
 
 -- 8. Create performance indexes
 CREATE INDEX IF NOT EXISTS idx_connected_accounts_user ON connected_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_connected_accounts_google_id ON connected_accounts(google_account_id);
 CREATE INDEX IF NOT EXISTS idx_virtual_folders_user ON virtual_folders(user_id, parent_folder_id);
 CREATE INDEX IF NOT EXISTS idx_file_records_user ON file_records(user_id, virtual_folder_id);
 CREATE INDEX IF NOT EXISTS idx_file_records_account ON file_records(connected_account_id);

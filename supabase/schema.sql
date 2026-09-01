@@ -1,4 +1,4 @@
--- MultiDrive Database Schema (Phase 3 V2 — Database Architecture, Integrity & Migrations — Reconciled)
+-- MultiDrive Database Schema (Phase 3 V3 — Database Architecture, Integrity & Migrations — Reconciled & Audited)
 -- Intact Single-Object Storage Model
 
 -- Enable UUID extension
@@ -9,13 +9,14 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   google_email TEXT NOT NULL,
-  google_account_id TEXT, -- Stable Google OAuth subject/account ID
+  google_account_id TEXT NOT NULL, -- Stable Google OAuth subject/account ID (ISSUE-06)
   vault_secret_id TEXT NOT NULL, -- Encrypted Google OAuth refresh token (AES-256-GCM v1:...)
   storage_used_bytes BIGINT NOT NULL DEFAULT 0 CHECK (storage_used_bytes >= 0),
   storage_total_bytes BIGINT NOT NULL DEFAULT 16106127360 CHECK (storage_total_bytes >= 0), -- 15 GB default
   quota_last_checked_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT unique_user_google_email UNIQUE(user_id, google_email)
+  CONSTRAINT unique_user_google_email UNIQUE(user_id, google_email),
+  CONSTRAINT unique_user_google_account UNIQUE(user_id, google_account_id)
 );
 
 -- 2. Virtual Folders Table
@@ -56,6 +57,7 @@ CREATE TABLE IF NOT EXISTS shared_links (
 
 -- Indexes for Access Performance & Integrity
 CREATE INDEX IF NOT EXISTS idx_connected_accounts_user ON connected_accounts(user_id);
+CREATE INDEX IF NOT EXISTS idx_connected_accounts_google_id ON connected_accounts(google_account_id);
 CREATE INDEX IF NOT EXISTS idx_virtual_folders_user ON virtual_folders(user_id, parent_folder_id);
 CREATE INDEX IF NOT EXISTS idx_file_records_user ON file_records(user_id, virtual_folder_id);
 CREATE INDEX IF NOT EXISTS idx_file_records_account ON file_records(connected_account_id);

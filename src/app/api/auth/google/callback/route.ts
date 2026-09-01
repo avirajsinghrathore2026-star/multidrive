@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
 
     const details = await fetchGoogleAccountDetails(tempToken);
 
-    // 4. Query existing connected account for this user and email
+    // 4. Query existing connected account for this user and email/googleAccountId
     const { data: existingAccounts } = await supabase
       .from('connected_accounts')
       .select('id, vault_secret_id')
@@ -108,11 +108,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${appUrl}?error=oauth_no_refresh_token`);
     }
 
-    // 5. Save or update connected account bound strictly to user.id
+    // 5. Save or update connected account bound strictly to user.id with google_account_id (ISSUE-06)
     if (existingAccount) {
       const { error: updateError } = await supabase
         .from('connected_accounts')
         .update({
+          google_account_id: details.googleAccountId,
           vault_secret_id: targetVaultSecretId,
           storage_used_bytes: details.storageUsedBytes,
           storage_total_bytes: details.storageTotalBytes,
@@ -129,6 +130,7 @@ export async function GET(request: NextRequest) {
       const { error: dbError } = await supabase.from('connected_accounts').insert({
         user_id: user.id,
         google_email: details.email,
+        google_account_id: details.googleAccountId,
         vault_secret_id: targetVaultSecretId,
         storage_used_bytes: details.storageUsedBytes,
         storage_total_bytes: details.storageTotalBytes,
@@ -136,7 +138,7 @@ export async function GET(request: NextRequest) {
       });
 
       if (dbError) {
-        console.error('Failed to insert connected account into DB');
+        console.error('Failed to insert connected account into DB:', dbError);
         return NextResponse.redirect(`${appUrl}?error=db_insert_failed`);
       }
     }

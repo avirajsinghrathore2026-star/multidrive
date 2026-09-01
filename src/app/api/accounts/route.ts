@@ -9,7 +9,7 @@ export async function GET() {
 
     const { data: accounts, error } = await supabase
       .from('connected_accounts')
-      .select('id, google_email, storage_used_bytes, storage_total_bytes, quota_last_checked_at, created_at')
+      .select('id, google_email, google_account_id, storage_used_bytes, storage_total_bytes, quota_last_checked_at, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -50,6 +50,7 @@ export async function POST() {
         const { data: updated } = await supabase
           .from('connected_accounts')
           .update({
+            google_account_id: details.googleAccountId,
             storage_used_bytes: details.storageUsedBytes,
             storage_total_bytes: details.storageTotalBytes,
             quota_last_checked_at: new Date().toISOString(),
