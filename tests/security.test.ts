@@ -713,9 +713,13 @@ async function runPhase4TestSuite() {
   );
 
   // ---------------------------------------------------------------------------
-  // Generate Machine-Readable JSON Matrix (phase-4-test-matrix.json)
+  // Generate Machine-Readable JSON Matrix (docs/phase-4/phase-4-test-matrix.json)
   // ---------------------------------------------------------------------------
-  const matrixPath = path.resolve(__dirname, '../phase-4-test-matrix.json');
+  const matrixDir = path.resolve(__dirname, '../docs/phase-4');
+  if (!fs.existsSync(matrixDir)) {
+    fs.mkdirSync(matrixDir, { recursive: true });
+  }
+  const matrixPath = path.resolve(matrixDir, 'phase-4-test-matrix.json');
   const matrixJson = {
     phase: 4,
     timestamp: new Date().toISOString(),
