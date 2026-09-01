@@ -1,12 +1,12 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { requireUser } from '@/lib/auth';
 import { generateAuthUrl } from '@/lib/google-drive';
 import { encryptToken } from '@/lib/vault';
 import { getServerConfig } from '@/lib/config';
 import crypto from 'crypto';
 
-export async function GET() {
-  let appUrl = 'http://localhost:3000';
+export async function GET(request: NextRequest) {
+  let appUrl = request.nextUrl.origin || 'http://localhost:3000';
   try {
     appUrl = getServerConfig().appUrl;
   } catch {

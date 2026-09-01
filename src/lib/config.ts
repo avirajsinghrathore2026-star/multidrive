@@ -34,7 +34,9 @@ export function getServerConfig(): ServerConfig {
     throw new Error('CONFIG ERROR: GOOGLE_CLIENT_SECRET environment variable is missing.');
   }
 
-  const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+  const rawAppUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
   let normalizedAppUrl = rawAppUrl.trim();
   if (normalizedAppUrl.endsWith('/')) {
     normalizedAppUrl = normalizedAppUrl.slice(0, -1);

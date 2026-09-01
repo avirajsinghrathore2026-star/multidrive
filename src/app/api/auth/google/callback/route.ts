@@ -14,12 +14,13 @@ export async function GET(request: NextRequest) {
   const error = searchParams.get('error');
   const stateParam = searchParams.get('state');
 
-  let appUrl = 'http://localhost:3000';
+  let appUrl = request.nextUrl.origin || 'http://localhost:3000';
   try {
     appUrl = getServerConfig().appUrl;
   } catch {
     // Fallback if config validation fails during error redirect
   }
+  const dashboardUrl = `${appUrl}/dashboard`;
 
   if (error || !code || !stateParam) {
     console.error('Google OAuth callback failed: Missing required parameters or OAuth consent error');
@@ -143,9 +144,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.redirect(`${appUrl}?connected=true&email=${encodeURIComponent(details.email)}`);
+    return NextResponse.redirect(`${dashboardUrl}?connected=true&email=${encodeURIComponent(details.email)}`);
   } catch (err) {
     console.error('Failed to process Google OAuth callback:', err instanceof Error ? err.message : 'Unknown error');
-    return NextResponse.redirect(`${appUrl}?error=oauth_failed`);
+    return NextResponse.redirect(`${dashboardUrl}?error=oauth_failed`);
   }
 }
