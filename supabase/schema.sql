@@ -1,4 +1,4 @@
--- MultiDrive Database Schema (Phase 3 — Database Architecture, Integrity & Migrations — No Chunking)
+-- MultiDrive Database Schema (Phase 3 V2 — Database Architecture, Integrity & Migrations — Reconciled)
 -- Intact Single-Object Storage Model
 
 -- Enable UUID extension
@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   google_email TEXT NOT NULL,
+  google_account_id TEXT, -- Stable Google OAuth subject/account ID
   vault_secret_id TEXT NOT NULL, -- Encrypted Google OAuth refresh token (AES-256-GCM v1:...)
   storage_used_bytes BIGINT NOT NULL DEFAULT 0 CHECK (storage_used_bytes >= 0),
   storage_total_bytes BIGINT NOT NULL DEFAULT 16106127360 CHECK (storage_total_bytes >= 0), -- 15 GB default
@@ -22,23 +23,24 @@ CREATE TABLE IF NOT EXISTS virtual_folders (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  parent_id UUID REFERENCES virtual_folders(id) ON DELETE SET NULL,
+  parent_folder_id UUID REFERENCES virtual_folders(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 3. File Records Table (Logical Files mapped to 1 Physical Object on 1 Account)
+-- Note: connected_account_id uses ON DELETE RESTRICT to prevent silent file deletion on disconnect (ISSUE-04)
 CREATE TABLE IF NOT EXISTS file_records (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  connected_account_id UUID NOT NULL REFERENCES connected_accounts(id) ON DELETE CASCADE,
+  connected_account_id UUID NOT NULL REFERENCES connected_accounts(id) ON DELETE RESTRICT,
   google_drive_file_id TEXT NOT NULL,
   filename TEXT NOT NULL,
   size_bytes BIGINT NOT NULL CHECK (size_bytes >= 0),
   mime_type TEXT NOT NULL,
-  folder_id UUID REFERENCES virtual_folders(id) ON DELETE SET NULL,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'trashed')),
+  virtual_folder_id UUID REFERENCES virtual_folders(id) ON DELETE SET NULL,
+  in_trash BOOLEAN NOT NULL DEFAULT FALSE,
   trashed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -54,10 +56,53 @@ CREATE TABLE IF NOT EXISTS shared_links (
 
 -- Indexes for Access Performance & Integrity
 CREATE INDEX IF NOT EXISTS idx_connected_accounts_user ON connected_accounts(user_id);
-CREATE INDEX IF NOT EXISTS idx_virtual_folders_user ON virtual_folders(user_id, parent_id);
-CREATE INDEX IF NOT EXISTS idx_file_records_user ON file_records(user_id, folder_id);
+CREATE INDEX IF NOT EXISTS idx_virtual_folders_user ON virtual_folders(user_id, parent_folder_id);
+CREATE INDEX IF NOT EXISTS idx_file_records_user ON file_records(user_id, virtual_folder_id);
 CREATE INDEX IF NOT EXISTS idx_file_records_account ON file_records(connected_account_id);
+CREATE INDEX IF NOT EXISTS idx_file_records_in_trash ON file_records(in_trash);
 CREATE INDEX IF NOT EXISTS idx_shared_links_token ON shared_links(token);
+
+-- -----------------------------------------------------------------------------
+-- Database-Level Cross-User Ownership Enforcement Trigger (ISSUE-03)
+-- Guarantees that virtual_folder_id and connected_account_id belong to NEW.user_id
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION check_file_records_ownership()
+RETURNS TRIGGER AS $$
+DECLARE
+  folder_owner UUID;
+  account_owner UUID;
+BEGIN
+  -- Check virtual_folder_id ownership if specified
+  IF NEW.virtual_folder_id IS NOT NULL THEN
+    SELECT user_id INTO folder_owner FROM virtual_folders WHERE id = NEW.virtual_folder_id;
+    IF folder_owner IS NULL THEN
+      RAISE EXCEPTION 'FOREIGN KEY ERROR: Referenced virtual_folder_id does not exist';
+    END IF;
+    IF folder_owner <> NEW.user_id THEN
+      RAISE EXCEPTION 'SECURITY VIOLATION: Cross-user folder attachment rejected (Folder owner % != File owner %)', folder_owner, NEW.user_id;
+    END IF;
+  END IF;
+
+  -- Check connected_account_id ownership
+  IF NEW.connected_account_id IS NOT NULL THEN
+    SELECT user_id INTO account_owner FROM connected_accounts WHERE id = NEW.connected_account_id;
+    IF account_owner IS NULL THEN
+      RAISE EXCEPTION 'FOREIGN KEY ERROR: Referenced connected_account_id does not exist';
+    END IF;
+    IF account_owner <> NEW.user_id THEN
+      RAISE EXCEPTION 'SECURITY VIOLATION: Cross-user connected account attachment rejected (Account owner % != File owner %)', account_owner, NEW.user_id;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS trg_enforce_file_records_ownership ON file_records;
+CREATE TRIGGER trg_enforce_file_records_ownership
+  BEFORE INSERT OR UPDATE ON file_records
+  FOR EACH ROW
+  EXECUTE FUNCTION check_file_records_ownership();
 
 -- Enable Row Level Security (RLS) on all tables
 ALTER TABLE connected_accounts ENABLE ROW LEVEL SECURITY;

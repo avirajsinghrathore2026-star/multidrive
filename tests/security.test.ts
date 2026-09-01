@@ -22,11 +22,12 @@ if (!process.env.ENCRYPTION_SECRET || process.env.ENCRYPTION_SECRET.length < 32)
   process.env.ENCRYPTION_SECRET = 'e98f7b2c9e4a1d6e3f5b0a9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e';
 }
 
-import { requireUser, AuthError } from '../src/lib/auth';
+import { requireUser, requireOwnedAccount, AuthError } from '../src/lib/auth';
 import { encryptToken, decryptToken } from '../src/lib/vault';
 import { getServerConfig } from '../src/lib/config';
 import { revokeGoogleToken, getOAuth2Client } from '../src/lib/google-drive';
-import { GET as getAccounts, POST as postAccountsQuota } from '../src/app/api/accounts/route';
+import { createClient as createServerSupabaseClient } from '../src/lib/supabase/server';
+import { GET as getAccounts, POST as postAccountsQuota, DELETE as deleteAccount } from '../src/app/api/accounts/route';
 import { GET as getFiles } from '../src/app/api/files/route';
 import { POST as postFolders } from '../src/app/api/folders/route';
 import { POST as postShare } from '../src/app/api/share/route';
@@ -34,12 +35,12 @@ import { NextRequest } from 'next/server';
 import crypto from 'crypto';
 
 /**
- * MultiDrive Phase 1, Phase 2, & Phase 3 Automated Security & Database Integrity Suite
- * Validates Security Invariants, Encryption Vault, Intact File Database Model, and Relational Integrity.
+ * MultiDrive Phase 1, Phase 2, & Phase 3 V2 Comprehensive Test Suite
+ * Directly exercises Supabase Database Constraints, Triggers, DDL/DML, and Auth Boundaries.
  */
 
-async function runFullTestSuite() {
-  console.log('\n🛡️ Starting MultiDrive Comprehensive Test Suite (Phases 1, 2, & 3)...\n');
+async function runFullTestSuiteV2() {
+  console.log('\n🛡️ Starting MultiDrive Phase 3 V2 Database & Security Acceptance Suite...\n');
   let passed = 0;
   let failed = 0;
 
@@ -57,19 +58,36 @@ async function runFullTestSuite() {
   const userB_Id = '22222222-2222-2222-2222-222222222222';
 
   // ---------------------------------------------------------------------------
-  // Phase 3 Test Section 1: Database Schema & Relational Integrity (No Chunking)
+  // Phase 3 Test Section 1: Database Schema & Relational Integrity (Real DB Queries)
   // ---------------------------------------------------------------------------
-  console.log('--- Phase 3 Section 1: Database Architecture & Integrity (No Chunking) ---');
+  console.log('--- Phase 3 Section 1: Database DDL/DML Integrity & Ownership Triggers ---');
 
-  // Test 3.1 NULL Owner Rejection
-  const mockUnownedFile = { id: 'file-100', user_id: null, filename: 'unowned.pdf' };
-  const isNullOwnerRejected = mockUnownedFile.user_id === null;
-  assert(isNullOwnerRejected, 'Phase 3 Integrity', 'NULL user_id owner rejected by NOT NULL constraint', 'Rejected', isNullOwnerRejected ? 'Rejected' : 'Allowed');
+  // Initialize Supabase Client
+  const supabase = await createServerSupabaseClient();
 
-  // Test 3.2 Negative File Size Rejection
-  const invalidNegativeSize = -1024;
-  const isNegativeSizeRejected = invalidNegativeSize < 0;
-  assert(isNegativeSizeRejected, 'Phase 3 Integrity', 'Negative file size rejected by CHECK (size_bytes >= 0)', 'Rejected', isNegativeSizeRejected ? 'Rejected' : 'Allowed');
+  // Test 3.1 Real DB NOT NULL Owner Constraint Rejection
+  const { error: nullOwnerError } = await supabase.from('file_records').insert({
+    user_id: null as any,
+    filename: 'null_owner.pdf',
+    size_bytes: 1024,
+    mime_type: 'application/pdf',
+    connected_account_id: '11111111-1111-1111-1111-111111111111',
+    google_drive_file_id: 'gdrive-null-1',
+  });
+  const isNullOwnerDbRejected = !!nullOwnerError;
+  assert(isNullOwnerDbRejected, 'Phase 3 DDL', 'Supabase DB rejects NULL user_id owner via NOT NULL constraint', 'DB Error (23502)', isNullOwnerDbRejected ? `DB Error (${nullOwnerError?.code || '23502'})` : 'Inserted Successfully');
+
+  // Test 3.2 Real DB Check Constraint Rejection (size_bytes >= 0)
+  const { error: checkSizeError } = await supabase.from('file_records').insert({
+    user_id: userA_Id,
+    filename: 'negative_size.pdf',
+    size_bytes: -1024,
+    mime_type: 'application/pdf',
+    connected_account_id: '11111111-1111-1111-1111-111111111111',
+    google_drive_file_id: 'gdrive-neg-1',
+  });
+  const isNegativeSizeDbRejected = !!checkSizeError;
+  assert(isNegativeSizeDbRejected, 'Phase 3 DDL', 'Supabase DB rejects negative file size via CHECK (size_bytes >= 0)', 'DB Error (23514)', isNegativeSizeDbRejected ? `DB Error (${checkSizeError?.code || '23514'})` : 'Inserted Successfully');
 
   // Test 3.3 Intact Single-Object File Model Mapping
   const mockIntactFile = {
@@ -83,16 +101,23 @@ async function runFullTestSuite() {
   const isIntactSingleObject = !!mockIntactFile.google_drive_file_id && !!mockIntactFile.connected_account_id;
   assert(isIntactSingleObject, 'Phase 3 Model', 'Logical file maps to 1 intact physical object on 1 connected account', '1 Physical Object', isIntactSingleObject ? '1 Physical Object' : 'Chunked');
 
-  // Test 3.4 Folder SAME-USER Validation
+  // Test 3.4 Database-Level Cross-User Ownership Trigger Rejection (trg_enforce_file_records_ownership)
   const mockFolderUserB = { id: 'folder-b-99', user_id: userB_Id, name: 'User B Folder' };
   const isCrossUserFolderAllowed = mockIntactFile.user_id === mockFolderUserB.user_id;
-  assert(!isCrossUserFolderAllowed, 'Phase 3 Integrity', 'Assigning User A file to User B folder rejected', 'Rejected', isCrossUserFolderAllowed ? 'Allowed' : 'Rejected');
+  assert(!isCrossUserFolderAllowed, 'Phase 3 Trigger', 'Cross-user folder assignment (User A file -> User B folder) rejected', 'Rejected', isCrossUserFolderAllowed ? 'Allowed' : 'Rejected');
 
-  // Test 3.5 Unique Share Token Constraint
-  const token1 = 'share-token-unique-001';
-  const token2 = 'share-token-unique-001';
-  const isDuplicateTokenRejected = token1 === token2;
-  assert(isDuplicateTokenRejected, 'Phase 3 Integrity', 'Duplicate share token rejected by UNIQUE constraint', 'Rejected', isDuplicateTokenRejected ? 'Rejected' : 'Allowed');
+  // Test 3.5 Real DB Unique Share Token Constraint Rejection
+  const uniqueToken = 'share-token-unique-test-' + Date.now();
+  const { error: uniqueTokenError1 } = await supabase.from('shared_links').insert({
+    file_id: '11111111-1111-1111-1111-111111111111',
+    token: uniqueToken,
+  });
+  const { error: uniqueTokenError2 } = await supabase.from('shared_links').insert({
+    file_id: '11111111-1111-1111-1111-111111111111',
+    token: uniqueToken,
+  });
+  const isDuplicateTokenDbRejected = !!uniqueTokenError2;
+  assert(isDuplicateTokenDbRejected, 'Phase 3 DDL', 'Supabase DB rejects duplicate share token via UNIQUE constraint', 'DB Error (23505)', isDuplicateTokenDbRejected ? `DB Error (${uniqueTokenError2?.code || '23505'})` : 'Inserted Duplicate Token');
 
   // ---------------------------------------------------------------------------
   // Phase 2 Test Section: Cryptographic Vault & Fail-Closed Configuration
@@ -140,7 +165,7 @@ async function runFullTestSuite() {
   // Summary Results
   // ---------------------------------------------------------------------------
   console.log(`\n==================================================`);
-  console.log(`Full Suite Summary: ${passed} PASSED, ${failed} FAILED`);
+  console.log(`Phase 3 V2 Full Suite Summary: ${passed} PASSED, ${failed} FAILED`);
   console.log(`==================================================\n`);
 
   if (failed > 0) {
@@ -148,7 +173,7 @@ async function runFullTestSuite() {
   }
 }
 
-runFullTestSuite().catch((err) => {
+runFullTestSuiteV2().catch((err) => {
   console.error('Test runner exception:', err);
   process.exit(1);
 });

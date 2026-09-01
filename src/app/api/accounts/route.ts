@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server';
-import { requireUser, AuthError } from '@/lib/auth';
-import { fetchGoogleAccountDetails } from '@/lib/google-drive';
+import { NextRequest, NextResponse } from 'next/server';
+import { requireUser, requireOwnedAccount, AuthError } from '@/lib/auth';
+import { fetchGoogleAccountDetails, revokeGoogleToken } from '@/lib/google-drive';
 import { decryptToken } from '@/lib/vault';
 
 export async function GET() {
@@ -71,5 +71,64 @@ export async function POST() {
       return NextResponse.json({ error: err.message }, { status: err.statusCode });
     }
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
+// DELETE /api/accounts - Disconnect Google Account with RESTRICT integrity check (ISSUE-04)
+export async function DELETE(request: NextRequest) {
+  try {
+    const { user, supabase } = await requireUser();
+    const searchParams = request.nextUrl.searchParams;
+    const accountId = searchParams.get('id');
+
+    if (!accountId) {
+      return NextResponse.json({ error: 'Account ID is required' }, { status: 400 });
+    }
+
+    const account = await requireOwnedAccount(supabase, user.id, accountId);
+
+    // Check if active file records reference this connected account
+    const { count: fileCount } = await supabase
+      .from('file_records')
+      .select('id', { count: 'exact', head: true })
+      .eq('connected_account_id', accountId)
+      .eq('user_id', user.id);
+
+    if (fileCount && fileCount > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot disconnect account containing ${fileCount} active files. Please delete or move those files first to prevent data loss.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Revoke token with Google
+    try {
+      const refreshToken = decryptToken(account.vault_secret_id);
+      await revokeGoogleToken(refreshToken);
+    } catch (revokeErr) {
+      console.error('Failed to revoke Google token during disconnect:', revokeErr);
+    }
+
+    // Delete connected account from database (RESTRICT enforced at DB level)
+    const { error: dbError } = await supabase
+      .from('connected_accounts')
+      .delete()
+      .eq('id', accountId)
+      .eq('user_id', user.id);
+
+    if (dbError) {
+      console.error('Failed to delete connected account from DB:', dbError);
+      return NextResponse.json({ error: 'Failed to disconnect account' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json({ error: err.message }, { status: err.statusCode });
+    }
+    console.error('Account disconnect error:', err);
+    return NextResponse.json({ error: 'Failed to disconnect account' }, { status: 500 });
   }
 }

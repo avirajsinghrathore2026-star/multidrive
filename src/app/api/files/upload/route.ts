@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Readable } from 'stream';
-import { requireUser, requireOwnedFolder, AuthError } from '@/lib/auth';
+import { requireUser, requireOwnedFolder, requireOwnedAccount, AuthError } from '@/lib/auth';
 import { decryptToken } from '@/lib/vault';
 import { uploadStreamToDrive, fetchGoogleAccountDetails } from '@/lib/google-drive';
 
@@ -42,6 +42,9 @@ export async function POST(request: NextRequest) {
 
     accountsWithFreeSpace.sort((a, b) => (b.freeSpaceBytes > a.freeSpaceBytes ? 1 : -1));
     const targetAccount = accountsWithFreeSpace[0];
+
+    // Explicitly verify account ownership
+    await requireOwnedAccount(supabase, user.id, targetAccount.id);
 
     if (targetAccount.freeSpaceBytes < BigInt(file.size)) {
       return NextResponse.json(
