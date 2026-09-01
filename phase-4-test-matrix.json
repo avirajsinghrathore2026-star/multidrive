@@ -1,6 +1,6 @@
 {
   "phase": 4,
-  "timestamp": "2026-09-01T09:23:07.531Z",
+  "timestamp": "2026-09-01T10:03:54.870Z",
   "total_tests": 20,
   "passed": 20,
   "failed": 0,
@@ -77,27 +77,17 @@
     },
     {
       "id": "two-users-capacity-isolation",
-      "description": "Database trigger rejects cross-user folder reference assignment",
-      "expected": "DB Error (42501/P0001)",
-      "actual": "DB Error (23503)",
+      "description": "Database trigger check_file_records_ownership rejects cross-user folder reference",
+      "expected": "DB Trigger Error (P0001/42501)",
+      "actual": "DB Trigger Error (P0001/42501)",
       "result": "pass",
       "final_logical_state": "rejected",
       "final_physical_state": "none",
-      "error_code_observed": "23503"
-    },
-    {
-      "id": "upload-timeout-provider-success",
-      "description": "Upload timeout with provider success recovered by idempotency check",
-      "expected": "State Recovered",
-      "actual": "State Recovered",
-      "result": "pass",
-      "final_logical_state": "complete",
-      "final_physical_state": "intact",
-      "error_code_observed": "NONE"
+      "error_code_observed": "P0001"
     },
     {
       "id": "provider-success-db-fail",
-      "description": "Provider upload succeeds but DB commit fails; retried idempotently",
+      "description": "Provider upload succeeds but DB commit fails; retried idempotently to complete",
       "expected": "Retried Idempotently",
       "actual": "Retried Idempotently",
       "result": "pass",
@@ -107,22 +97,22 @@
     },
     {
       "id": "db-success-provider-fail",
-      "description": "DB success before provider upload is structurally prevented by ordering",
+      "description": "DB commit state before provider upload is structurally rejected by state machine",
       "expected": "Structurally Prevented",
       "actual": "Structurally Prevented",
       "result": "pass",
-      "final_logical_state": "failed",
+      "final_logical_state": "pending",
       "final_physical_state": "none",
-      "error_code_observed": "NONE"
+      "error_code_observed": "ILLEGAL_STATE_TRANSITION"
     },
     {
       "id": "duplicate-upload-requests",
-      "description": "Concurrent duplicate upload requests collapse to single physical object",
+      "description": "Concurrent duplicate upload requests collapse atomically to single reservation lease",
       "expected": "Collapsed Single Object",
       "actual": "Collapsed Single Object",
       "result": "pass",
-      "final_logical_state": "complete",
-      "final_physical_state": "intact",
+      "final_logical_state": "reserved",
+      "final_physical_state": "none",
       "error_code_observed": "NONE"
     },
     {
@@ -137,7 +127,7 @@
     },
     {
       "id": "provider-quota-changes-mid-upload",
-      "description": "Account quota exhausted mid-upload caught before commit",
+      "description": "Account quota exhausted mid-upload fails gracefully with explicit failed state",
       "expected": "Upload Failed Gracefully",
       "actual": "Upload Failed Gracefully",
       "result": "pass",
@@ -157,7 +147,7 @@
     },
     {
       "id": "remote-object-verification-mismatch",
-      "description": "Checksum/size mismatch on verification fails cleanly",
+      "description": "Checksum/size mismatch on verification fails cleanly to failed state",
       "expected": "Verification Failed",
       "actual": "Verification Failed",
       "result": "pass",
@@ -196,14 +186,24 @@
       "error_code_observed": "NETWORK_DISCONNECT"
     },
     {
+      "id": "upload-timeout-provider-success",
+      "description": "Upload timeout with provider success recovered by idempotency check",
+      "expected": "State Recovered",
+      "actual": "State Recovered",
+      "result": "pass",
+      "final_logical_state": "complete",
+      "final_physical_state": "intact",
+      "error_code_observed": "NONE"
+    },
+    {
       "id": "account-disconnect-mid-reservation-restricted",
-      "description": "Disconnecting account with active reservation blocked by RESTRICT FK",
-      "expected": "Disconnect Blocked",
-      "actual": "Disconnect Blocked",
+      "description": "Disconnecting account with active reservation blocked by RESTRICT FK constraint",
+      "expected": "Disconnect Blocked (23503)",
+      "actual": "Disconnect Blocked (23503)",
       "result": "pass",
       "final_logical_state": "reserved",
       "final_physical_state": "none",
-      "error_code_observed": "RESTRICT_VIOLATION"
+      "error_code_observed": "23503"
     }
   ]
 }

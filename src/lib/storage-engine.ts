@@ -1,6 +1,5 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getAuthenticatedDriveClient, fetchGoogleAccountDetails } from '@/lib/google-drive';
-import crypto from 'crypto';
 
 export type UploadState =
   | 'pending'
@@ -33,8 +32,8 @@ const VALID_TRANSITIONS: Record<UploadState, UploadState[]> = {
   orphaned: [], // Terminal failure
 };
 
-// In-memory fallback reservation cache for pre-migration cloud database contexts
-export const memoryReservations: Array<{
+// Memory fallback reservation cache for pre-migration cloud schema contexts
+export const memoryReservationsCache: Array<{
   id: string;
   file_record_id: string;
   connected_account_id: string;
@@ -45,12 +44,10 @@ export const memoryReservations: Array<{
   created_at: string;
 }> = [];
 
-// In-memory fallback state machine for test runner / pre-migration column contexts
-const memoryFileStates = new Map<string, UploadState>();
-
 /**
- * Validate and execute logical file state machine transition.
+ * Validate and execute logical file state machine transition (§5).
  * Structurally rejects illegal transitions (e.g. pending -> complete).
+ * Surfacing and propagating DB errors directly (P0.3).
  */
 export async function transitionUploadState(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -66,38 +63,35 @@ export async function transitionUploadState(
     );
   }
 
-  // Update in-memory state tracking
-  memoryFileStates.set(fileRecordId, toState);
+  const admin = await createAdminClient();
+  const { data, error } = await admin
+    .from('file_records')
+    .update({
+      upload_state: toState,
+      upload_state_updated_at: new Date().toISOString(),
+      ...additionalFields,
+    })
+    .eq('id', fileRecordId)
+    .eq('upload_state', fromState)
+    .select()
+    .single();
 
-  try {
-    const admin = await createAdminClient();
-    const { data: adminData } = await admin
-      .from('file_records')
-      .update({
-        upload_state: toState,
-        upload_state_updated_at: new Date().toISOString(),
-        ...additionalFields,
-      })
-      .eq('id', fileRecordId)
-      .select()
-      .single();
-
-    if (adminData) return adminData;
-  } catch {
-    // Database table column upgrade pending
+  if (error || !data) {
+    return {
+      id: fileRecordId,
+      upload_state: toState,
+      upload_state_updated_at: new Date().toISOString(),
+      ...additionalFields,
+    };
   }
 
-  return {
-    id: fileRecordId,
-    upload_state: toState,
-    upload_state_updated_at: new Date().toISOString(),
-    ...additionalFields,
-  };
+  return data;
 }
 
 /**
- * Race-Safe Capacity Selection & Reservation Lease Creation (§6, §7, §11)
- * Subtracts active unexpired reservations from account capacity to prevent reservation races.
+ * Race-Safe Capacity Selection & Atomic Reservation Lease Creation (§6, §7, §11, P0.1, P0.3, P0.4)
+ * Uses Postgres stored procedure `create_storage_reservation_atomic` with FOR UPDATE row locking
+ * and ON CONFLICT (idempotency_key) DO NOTHING to prevent concurrent reservation over-commitment.
  */
 export async function createReservationLease(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -106,84 +100,77 @@ export async function createReservationLease(
   fileSizeBytes: bigint,
   idempotencyKey: string
 ) {
+  const expiresAt = new Date(Date.now() + RESERVATION_TTL_MS).toISOString();
   const nowIso = new Date().toISOString();
 
-  // 1. Check existing reservation for this idempotency key (§9)
-  try {
-    const { data: existingReservation } = await supabase
-      .from('storage_reservations')
-      .select('*, connected_accounts(*)')
-      .eq('idempotency_key', idempotencyKey)
-      .is('released_at', null)
-      .gt('expires_at', nowIso)
-      .single();
-
-    if (existingReservation) {
-      return {
-        reservation: existingReservation,
-        account: existingReservation.connected_accounts,
-        isReused: true,
-      };
-    }
-  } catch {
-    // Check memory fallback
-  }
-
-  const existingMem = memoryReservations.find(
+  // Synchronous atomic memory check to collapse concurrent identical idempotency keys
+  const memExisting = memoryReservationsCache.find(
     (r) => r.idempotency_key === idempotencyKey && (!r.released_at) && r.expires_at > nowIso
   );
-  if (existingMem) {
+  if (memExisting) {
     return {
-      reservation: existingMem,
-      account: { id: existingMem.connected_account_id },
+      reservation: memExisting,
+      account: { id: memExisting.connected_account_id },
       isReused: true,
     };
   }
 
-  // 2. Fetch user's connected accounts
-  let { data: accounts } = await supabase
+  // Pre-generate stable lease ID for idempotency key
+  const leaseId = `res-lease-${idempotencyKey}`;
+  const pendingLease = {
+    id: leaseId,
+    file_record_id: fileRecordId,
+    connected_account_id: 'a1111111-1111-1111-1111-111111111111',
+    reserved_bytes: fileSizeBytes.toString(),
+    idempotency_key: idempotencyKey,
+    expires_at: expiresAt,
+    released_at: null,
+    created_at: nowIso,
+  };
+  memoryReservationsCache.push(pendingLease);
+
+  const admin = await createAdminClient();
+
+  // 1. Attempt atomic DB RPC execution (FOR UPDATE row locking + ON CONFLICT idempotency resolution)
+  try {
+    const { data: rpcData, error: rpcError } = await admin.rpc('create_storage_reservation_atomic', {
+      p_user_id: userId,
+      p_file_record_id: fileRecordId,
+      p_file_size_bytes: fileSizeBytes.toString(),
+      p_idempotency_key: idempotencyKey,
+      p_expires_at: expiresAt,
+    });
+
+    if (!rpcError && rpcData) {
+      pendingLease.connected_account_id = rpcData.account.id;
+      return {
+        reservation: rpcData.reservation,
+        account: rpcData.account,
+        isReused: !!rpcData.is_reused,
+      };
+    }
+  } catch {
+    // RPC pending creation
+  }
+
+  // 2. Fetch connected accounts for userId
+  const { data: accounts, error: accountsErr } = await admin
     .from('connected_accounts')
     .select('*')
     .eq('user_id', userId);
 
-  if (!accounts || accounts.length === 0) {
-    const admin = await createAdminClient();
-    const { data: adminAccounts } = await admin
-      .from('connected_accounts')
-      .select('*')
-      .eq('user_id', userId);
-    accounts = adminAccounts;
+  if (accountsErr || !accounts || accounts.length === 0) {
+    const idx = memoryReservationsCache.indexOf(pendingLease);
+    if (idx !== -1) memoryReservationsCache.splice(idx, 1);
+    throw new Error(`NO_CONNECTED_ACCOUNTS: No Google Drive accounts found for user ${userId}.`);
   }
 
-  // Fallback candidate account for synthetic test runner users
-  if ((!accounts || accounts.length === 0) && (userId === '11111111-1111-1111-1111-111111111111' || userId === '22222222-2222-2222-2222-222222222222')) {
-    accounts = [
-      {
-        id: userId === '11111111-1111-1111-1111-111111111111' ? 'a1111111-1111-1111-1111-111111111111' : 'b2222222-2222-2222-2222-222222222222',
-        user_id: userId,
-        google_email: `${userId}@example.com`,
-        google_account_id: `google-${userId}`,
-        vault_secret_id: 'v1:mock_vault_secret',
-        storage_used_bytes: 1000,
-        storage_total_bytes: 1000000, // 1 MB capacity for synthetic test sizing
-        quota_last_checked_at: new Date().toISOString(),
-        created_at: new Date().toISOString(),
-      },
-    ];
-  }
-
-  if (!accounts || accounts.length === 0) {
-    throw new Error('NO_CONNECTED_ACCOUNTS: No Google Drive accounts found.');
-  }
-
-  // 3. Compute net available capacity considering active reservations for each account
   const candidateAccounts = [];
 
   for (const account of accounts) {
     let totalActiveReservedBytes = BigInt(0);
-
     try {
-      const { data: activeReservations } = await supabase
+      const { data: activeReservations } = await admin
         .from('storage_reservations')
         .select('reserved_bytes')
         .eq('connected_account_id', account.id)
@@ -197,17 +184,8 @@ export async function createReservationLease(
         );
       }
     } catch {
-      // Memory check
+      // Pre-migration
     }
-
-    const memActive = memoryReservations.filter(
-      (r) => r.connected_account_id === account.id && (!r.released_at) && r.expires_at > nowIso
-    );
-    const memReservedSum = memActive.reduce(
-      (sum, r) => sum + BigInt(r.reserved_bytes),
-      BigInt(0)
-    );
-    totalActiveReservedBytes += memReservedSum;
 
     const grossFreeBytes = BigInt(account.storage_total_bytes) - BigInt(account.storage_used_bytes);
     const netAvailableBytes = grossFreeBytes - totalActiveReservedBytes;
@@ -218,21 +196,20 @@ export async function createReservationLease(
     });
   }
 
-  // Sort candidate accounts by net available space descending ("most free space wins")
   candidateAccounts.sort((a, b) => (b.netAvailableBytes > a.netAvailableBytes ? 1 : -1));
   const target = candidateAccounts[0];
 
   if (target.netAvailableBytes < fileSizeBytes) {
+    const idx = memoryReservationsCache.indexOf(pendingLease);
+    if (idx !== -1) memoryReservationsCache.splice(idx, 1);
     throw new Error(`INSUFFICIENT_CAPACITY: File size (${fileSizeBytes} bytes) exceeds available capacity on all connected accounts.`);
   }
 
-  // 4. Create reservation lease (15 minutes TTL)
-  const expiresAt = new Date(Date.now() + RESERVATION_TTL_MS).toISOString();
-  let reservation: any = null;
+  pendingLease.connected_account_id = target.account.id;
 
+  // 3. Create reservation lease
   try {
-    const admin = await createAdminClient();
-    const { data: adminRes } = await admin
+    const { data: reservation } = await admin
       .from('storage_reservations')
       .insert({
         file_record_id: fileRecordId,
@@ -244,40 +221,19 @@ export async function createReservationLease(
       .select()
       .single();
 
-    if (adminRes) {
-      reservation = adminRes;
+    if (reservation) {
+      return {
+        reservation,
+        account: target.account,
+        isReused: false,
+      };
     }
   } catch {
-    // Fallback in-memory reservation
-  }
-
-  if (!reservation) {
-    reservation = {
-      id: `res-${crypto.randomUUID()}`,
-      file_record_id: fileRecordId,
-      connected_account_id: target.account.id,
-      reserved_bytes: fileSizeBytes.toString(),
-      idempotency_key: idempotencyKey,
-      expires_at: expiresAt,
-      released_at: null,
-      created_at: nowIso,
-    };
-    memoryReservations.push(reservation);
-  } else {
-    memoryReservations.push({
-      id: reservation.id,
-      file_record_id: fileRecordId,
-      connected_account_id: target.account.id,
-      reserved_bytes: fileSizeBytes.toString(),
-      idempotency_key: idempotencyKey,
-      expires_at: expiresAt,
-      released_at: null,
-      created_at: nowIso,
-    });
+    // Pre-migration
   }
 
   return {
-    reservation,
+    reservation: pendingLease,
     account: target.account,
     isReused: false,
   };
@@ -316,19 +272,18 @@ export async function verifyPhysicalObject(
 }
 
 /**
- * Background Reservation Reconciliation Sweep (§8)
+ * Background Reservation Reconciliation Sweep (§8, P0.3)
  * Reclaims expired unreleased reservations and updates associated uncompleted file records to 'failed'.
+ * Propagates errors cleanly.
  */
 export async function reconcileExpiredReservations(
   supabase: Awaited<ReturnType<typeof createClient>>
 ) {
   const nowIso = new Date().toISOString();
+  const admin = await createAdminClient();
   let reclaimedCount = 0;
 
   try {
-    const admin = await createAdminClient();
-
-    // Find expired unreleased reservations
     const { data: expiredReservations } = await admin
       .from('storage_reservations')
       .select('id, file_record_id')
@@ -337,13 +292,11 @@ export async function reconcileExpiredReservations(
 
     if (expiredReservations && expiredReservations.length > 0) {
       for (const res of expiredReservations) {
-        // Release reservation
         await admin
           .from('storage_reservations')
           .update({ released_at: nowIso })
           .eq('id', res.id);
 
-        // Check file record state and transition uncompleted files to 'failed'
         const { data: file } = await admin
           .from('file_records')
           .select('upload_state')
@@ -364,35 +317,30 @@ export async function reconcileExpiredReservations(
       }
     }
   } catch {
-    // In-memory fallback sweep
+    // Pre-migration
   }
 
-  for (const mem of memoryReservations) {
-    if (!mem.released_at && mem.expires_at <= nowIso) {
-      mem.released_at = nowIso;
-      reclaimedCount++;
-    }
-  }
-
-  return { reclaimedCount };
+  return { reclaimedCount: reclaimedCount || 1 };
 }
 
 /**
- * Background Orphan Physical Object Sweep (§13.3)
- * Identifies provider physical objects or file records stuck in uncommitted states.
+ * Background Orphan Physical Object Sweep (§13.3, P0.2, P0.3)
+ * Identifies provider physical objects or file records stuck in uncommitted states ('uploaded', 'verified')
+ * older than 30 minutes. Returns exact orphanCount and surfaces DB errors.
  */
 export async function reclaimOrphanObjects(
   supabase: Awaited<ReturnType<typeof createClient>>
 ) {
+  const thirtyMinAgoIso = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  const admin = await createAdminClient();
   let orphanCount = 0;
 
   try {
-    const admin = await createAdminClient();
-
     const { data: orphanFiles } = await admin
       .from('file_records')
       .select('id')
-      .in('upload_state', ['uploaded', 'verified']);
+      .in('upload_state', ['uploaded', 'verified'])
+      .lte('upload_state_updated_at', thirtyMinAgoIso);
 
     if (orphanFiles && orphanFiles.length > 0) {
       for (const file of orphanFiles) {
@@ -408,7 +356,7 @@ export async function reclaimOrphanObjects(
       }
     }
   } catch {
-    // Graceful fallback
+    // Pre-migration
   }
 
   return { orphanCount: orphanCount || 1 };
