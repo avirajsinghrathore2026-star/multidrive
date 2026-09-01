@@ -48,8 +48,19 @@ function DashboardContent() {
         type: 'success',
       });
     } else if (error) {
+      let errorText = `OAuth Error (${error})`;
+      if (error === 'unauthenticated') {
+        errorText = 'Authentication Required: Please sign up or log in first before connecting a Google Drive account.';
+      } else if (error === 'oauth_cancelled') {
+        errorText = 'Google Authorization was cancelled.';
+      } else if (error === 'oauth_no_refresh_token') {
+        errorText = 'Google did not return a refresh token. Go to your Google Account security settings, revoke access for MultiDrive, and try connecting again.';
+      } else if (error === 'oauth_state_mismatch') {
+        errorText = 'OAuth state mismatch. Please refresh the page and try connecting again.';
+      }
+
       setToastMessage({
-        text: `OAuth Error: ${error === 'oauth_cancelled' ? 'Authorization cancelled' : 'Failed to connect account'}`,
+        text: errorText,
         type: 'error',
       });
     }
