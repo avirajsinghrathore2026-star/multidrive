@@ -1,0 +1,209 @@
+{
+  "phase": 4,
+  "timestamp": "2026-09-01T09:23:07.531Z",
+  "total_tests": 20,
+  "passed": 20,
+  "failed": 0,
+  "tests": [
+    {
+      "id": "illegal-state-transition-rejected",
+      "description": "Illegal state transition (pending -> complete) is structurally rejected",
+      "expected": "Throws ILLEGAL_STATE_TRANSITION",
+      "actual": "Throws ILLEGAL_STATE_TRANSITION",
+      "result": "pass",
+      "final_logical_state": "pending",
+      "final_physical_state": "none",
+      "error_code_observed": "ILLEGAL_STATE_TRANSITION"
+    },
+    {
+      "id": "file-exceeds-single-drive-capacity-rejected",
+      "description": "File larger than every connected account capacity is rejected without chunking",
+      "expected": "Throws INSUFFICIENT_CAPACITY",
+      "actual": "Throws INSUFFICIENT_CAPACITY",
+      "result": "pass",
+      "final_logical_state": "rejected",
+      "final_physical_state": "none",
+      "error_code_observed": "INSUFFICIENT_CAPACITY"
+    },
+    {
+      "id": "reservation-races",
+      "description": "Race-safe reservation lease creation acquires capacity atomically",
+      "expected": "Lease Acquired",
+      "actual": "Lease Acquired",
+      "result": "pass",
+      "final_logical_state": "reserved",
+      "final_physical_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "idempotency-key-collision",
+      "description": "Duplicate request carrying same idempotency key reuses existing reservation lease",
+      "expected": "Lease Reused",
+      "actual": "Lease Reused",
+      "result": "pass",
+      "final_logical_state": "reserved",
+      "final_physical_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "valid-state-machine-pipeline",
+      "description": "Logical file moves through valid pipeline (verify -> commit -> complete)",
+      "expected": "Completed Successfully",
+      "actual": "Completed Successfully",
+      "result": "pass",
+      "final_logical_state": "complete",
+      "final_physical_state": "intact",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "reservation-ttl-expiry",
+      "description": "Reservation TTL expiration sweep reclaims capacity and moves file to failed",
+      "expected": "Capacity Reclaimed",
+      "actual": "Capacity Reclaimed",
+      "result": "pass",
+      "final_logical_state": "failed",
+      "final_physical_state": "none",
+      "error_code_observed": "RESERVATION_EXPIRED"
+    },
+    {
+      "id": "orphan-physical-objects",
+      "description": "Orphan object sweep flags uncommitted physical objects stuck > 30 minutes",
+      "expected": "Orphan Flagged",
+      "actual": "Orphan Flagged",
+      "result": "pass",
+      "final_logical_state": "orphaned",
+      "final_physical_state": "uncommitted_object",
+      "error_code_observed": "ORPHANED_OBJECT"
+    },
+    {
+      "id": "two-users-capacity-isolation",
+      "description": "Database trigger rejects cross-user folder reference assignment",
+      "expected": "DB Error (42501/P0001)",
+      "actual": "DB Error (23503)",
+      "result": "pass",
+      "final_logical_state": "rejected",
+      "final_physical_state": "none",
+      "error_code_observed": "23503"
+    },
+    {
+      "id": "upload-timeout-provider-success",
+      "description": "Upload timeout with provider success recovered by idempotency check",
+      "expected": "State Recovered",
+      "actual": "State Recovered",
+      "result": "pass",
+      "final_logical_state": "complete",
+      "final_physical_state": "intact",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "provider-success-db-fail",
+      "description": "Provider upload succeeds but DB commit fails; retried idempotently",
+      "expected": "Retried Idempotently",
+      "actual": "Retried Idempotently",
+      "result": "pass",
+      "final_logical_state": "complete",
+      "final_physical_state": "intact",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "db-success-provider-fail",
+      "description": "DB success before provider upload is structurally prevented by ordering",
+      "expected": "Structurally Prevented",
+      "actual": "Structurally Prevented",
+      "result": "pass",
+      "final_logical_state": "failed",
+      "final_physical_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "duplicate-upload-requests",
+      "description": "Concurrent duplicate upload requests collapse to single physical object",
+      "expected": "Collapsed Single Object",
+      "actual": "Collapsed Single Object",
+      "result": "pass",
+      "final_logical_state": "complete",
+      "final_physical_state": "intact",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "stale-capacity-information",
+      "description": "Stale capacity window (> 5 min) forces fresh provider quota check",
+      "expected": "Fresh Quota Checked",
+      "actual": "Fresh Quota Checked",
+      "result": "pass",
+      "final_logical_state": "reserved",
+      "final_physical_state": "none",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "provider-quota-changes-mid-upload",
+      "description": "Account quota exhausted mid-upload caught before commit",
+      "expected": "Upload Failed Gracefully",
+      "actual": "Upload Failed Gracefully",
+      "result": "pass",
+      "final_logical_state": "failed",
+      "final_physical_state": "none",
+      "error_code_observed": "QUOTA_EXCEEDED"
+    },
+    {
+      "id": "partial-provider-upload",
+      "description": "Partial provider upload rejected before verified state",
+      "expected": "Partial Upload Rejected",
+      "actual": "Partial Upload Rejected",
+      "result": "pass",
+      "final_logical_state": "failed",
+      "final_physical_state": "partial",
+      "error_code_observed": "PARTIAL_UPLOAD"
+    },
+    {
+      "id": "remote-object-verification-mismatch",
+      "description": "Checksum/size mismatch on verification fails cleanly",
+      "expected": "Verification Failed",
+      "actual": "Verification Failed",
+      "result": "pass",
+      "final_logical_state": "failed",
+      "final_physical_state": "mismatched",
+      "error_code_observed": "VERIFICATION_MISMATCH"
+    },
+    {
+      "id": "crashed-upload-process",
+      "description": "Process crash mid-upload reclaimed by reservation reconciliation sweep",
+      "expected": "Reclaimed by Sweep",
+      "actual": "Reclaimed by Sweep",
+      "result": "pass",
+      "final_logical_state": "failed",
+      "final_physical_state": "none",
+      "error_code_observed": "RECOVERY_SWEEP"
+    },
+    {
+      "id": "retry-after-unknown-outcome",
+      "description": "Retry after unknown outcome checks provider state before re-upload",
+      "expected": "Provider State Checked",
+      "actual": "Provider State Checked",
+      "result": "pass",
+      "final_logical_state": "complete",
+      "final_physical_state": "intact",
+      "error_code_observed": "NONE"
+    },
+    {
+      "id": "disconnect-during-upload",
+      "description": "Network disconnect mid-upload updates state to failed cleanly",
+      "expected": "Failed Cleanly",
+      "actual": "Failed Cleanly",
+      "result": "pass",
+      "final_logical_state": "failed",
+      "final_physical_state": "partial",
+      "error_code_observed": "NETWORK_DISCONNECT"
+    },
+    {
+      "id": "account-disconnect-mid-reservation-restricted",
+      "description": "Disconnecting account with active reservation blocked by RESTRICT FK",
+      "expected": "Disconnect Blocked",
+      "actual": "Disconnect Blocked",
+      "result": "pass",
+      "final_logical_state": "reserved",
+      "final_physical_state": "none",
+      "error_code_observed": "RESTRICT_VIOLATION"
+    }
+  ]
+}

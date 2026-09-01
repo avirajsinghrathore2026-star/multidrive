@@ -27,9 +27,10 @@ export async function createClient() {
     );
   } catch {
     // Fallback when called outside of Next.js request store (e.g. standalone test execution)
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
     return createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ivqaappnkyhvqwsptjmk.supabase.co',
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key',
+      key,
       {
         cookies: {
           getAll() {
@@ -40,4 +41,20 @@ export async function createClient() {
       }
     );
   }
+}
+
+export async function createAdminClient() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy_key';
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ivqaappnkyhvqwsptjmk.supabase.co',
+    key,
+    {
+      cookies: {
+        getAll() {
+          return [];
+        },
+        setAll() {},
+      },
+    }
+  );
 }
