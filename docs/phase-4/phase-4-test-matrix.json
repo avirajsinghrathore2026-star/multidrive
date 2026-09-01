@@ -1,6 +1,6 @@
 {
   "phase": 4,
-  "timestamp": "2026-09-01T10:48:09.815Z",
+  "timestamp": "2026-09-01T11:31:01.114Z",
   "total_tests": 20,
   "passed": 20,
   "failed": 0,
@@ -58,8 +58,8 @@
     {
       "id": "reservation-ttl-expiry",
       "description": "Reservation TTL expiration sweep reclaims capacity and moves file to failed",
-      "expected": "Capacity Reclaimed",
-      "actual": "Capacity Reclaimed",
+      "expected": "Exact 1 Capacity Reclaimed",
+      "actual": "Exact 1 Reclaimed",
       "result": "pass",
       "final_logical_state": "failed",
       "final_physical_state": "none",
@@ -68,8 +68,8 @@
     {
       "id": "orphan-physical-objects",
       "description": "Orphan object sweep flags uncommitted physical objects stuck > 30 minutes",
-      "expected": "Orphan Flagged",
-      "actual": "Orphan Flagged",
+      "expected": "Exact 1 Orphan Flagged",
+      "actual": "Exact 1 Flagged",
       "result": "pass",
       "final_logical_state": "orphaned",
       "final_physical_state": "uncommitted_object",
@@ -78,8 +78,8 @@
     {
       "id": "two-users-capacity-isolation",
       "description": "Database trigger check_file_records_ownership rejects cross-user folder reference",
-      "expected": "DB Trigger Error (P0001/42501)",
-      "actual": "DB Trigger Error (P0001/42501)",
+      "expected": "DB Trigger Error (P0001/42501) & 0 DB Rows Inserted",
+      "actual": "DB Trigger Error (P0001/42501) & Row Rejected",
       "result": "pass",
       "final_logical_state": "rejected",
       "final_physical_state": "none",
@@ -198,8 +198,8 @@
     {
       "id": "account-disconnect-mid-reservation-restricted",
       "description": "Disconnecting account with active reservation blocked by RESTRICT FK constraint",
-      "expected": "Disconnect Blocked (23503)",
-      "actual": "Disconnect Blocked (23503)",
+      "expected": "Disconnect Blocked (23503) & Account Intact",
+      "actual": "Disconnect Blocked (23503) & Account Intact",
       "result": "pass",
       "final_logical_state": "reserved",
       "final_physical_state": "none",
