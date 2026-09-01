@@ -131,8 +131,8 @@ export async function GET(request: NextRequest) {
         console.error('Failed to update connected account in DB:', updateError);
         return NextResponse.redirect(`${dashboardUrl}?error=db_update_failed`);
       }
-    } else {
-      const { error: dbError } = await adminSupabase.from('connected_accounts').insert({
+      // Primary insert attempt (with google_account_id)
+      let insertObj: Record<string, any> = {
         user_id: targetUserId,
         google_email: details.email,
         google_account_id: details.googleAccountId,
@@ -140,11 +140,20 @@ export async function GET(request: NextRequest) {
         storage_used_bytes: details.storageUsedBytes,
         storage_total_bytes: details.storageTotalBytes,
         quota_last_checked_at: new Date().toISOString(),
-      });
+      };
+
+      let { error: dbError } = await adminSupabase.from('connected_accounts').insert(insertObj);
+
+      // Fallback insert attempt (without google_account_id if column does not exist in live schema)
+      if (dbError && (dbError.message?.includes('google_account_id') || dbError.code === 'PGRST204')) {
+        delete insertObj.google_account_id;
+        const fallbackRes = await adminSupabase.from('connected_accounts').insert(insertObj);
+        dbError = fallbackRes.error;
+      }
 
       if (dbError) {
         console.error('Failed to insert connected account into DB:', dbError);
-        return NextResponse.redirect(`${dashboardUrl}?error=db_insert_failed`);
+        return NextResponse.redirect(`${dashboardUrl}?error=${encodeURIComponent(`db_insert_failed: ${dbError.message || dbError.details || 'Schema conflict'}`)}`);
       }
     }
 
