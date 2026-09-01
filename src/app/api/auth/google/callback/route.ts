@@ -3,6 +3,7 @@ import { requireUser } from '@/lib/auth';
 import { getOAuth2Client, fetchGoogleAccountDetails } from '@/lib/google-drive';
 import { encryptToken, decryptToken } from '@/lib/vault';
 import { getServerConfig } from '@/lib/config';
+import { createAdminClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 
 // In-memory cache for atomic single-use OAuth state replay protection during server lifecycle
@@ -85,12 +86,15 @@ export async function GET(request: NextRequest) {
 
     const details = await fetchGoogleAccountDetails(tempToken);
 
-    // 4. Query existing connected account for this user and email/googleAccountId
-    const { data: existingAccounts } = await supabase
+    // 4. Query existing connected account for this user using admin client to prevent RLS cookie loss during cross-site redirect
+    const adminSupabase = await createAdminClient();
+    const targetUserId = parsedState.userId || user.id;
+
+    const { data: existingAccounts } = await adminSupabase
       .from('connected_accounts')
       .select('id, vault_secret_id')
       .eq('google_email', details.email)
-      .eq('user_id', user.id);
+      .eq('user_id', targetUserId);
 
     const existingAccount = existingAccounts && existingAccounts.length > 0 ? existingAccounts[0] : null;
 
@@ -106,12 +110,12 @@ export async function GET(request: NextRequest) {
     } else {
       // Case C: Initial connection and Google omitted refresh_token -> Fail safely!
       console.error('OAuth callback failed: Google omitted refresh_token on initial connection');
-      return NextResponse.redirect(`${appUrl}?error=oauth_no_refresh_token`);
+      return NextResponse.redirect(`${dashboardUrl}?error=oauth_no_refresh_token`);
     }
 
-    // 5. Save or update connected account bound strictly to user.id with google_account_id (ISSUE-06)
+    // 5. Save or update connected account bound strictly to user_id
     if (existingAccount) {
-      const { error: updateError } = await supabase
+      const { error: updateError } = await adminSupabase
         .from('connected_accounts')
         .update({
           google_account_id: details.googleAccountId,
@@ -121,15 +125,15 @@ export async function GET(request: NextRequest) {
           quota_last_checked_at: new Date().toISOString(),
         })
         .eq('id', existingAccount.id)
-        .eq('user_id', user.id);
+        .eq('user_id', targetUserId);
 
       if (updateError) {
-        console.error('Failed to update connected account in DB');
-        return NextResponse.redirect(`${appUrl}?error=db_update_failed`);
+        console.error('Failed to update connected account in DB:', updateError);
+        return NextResponse.redirect(`${dashboardUrl}?error=db_update_failed`);
       }
     } else {
-      const { error: dbError } = await supabase.from('connected_accounts').insert({
-        user_id: user.id,
+      const { error: dbError } = await adminSupabase.from('connected_accounts').insert({
+        user_id: targetUserId,
         google_email: details.email,
         google_account_id: details.googleAccountId,
         vault_secret_id: targetVaultSecretId,
@@ -140,7 +144,7 @@ export async function GET(request: NextRequest) {
 
       if (dbError) {
         console.error('Failed to insert connected account into DB:', dbError);
-        return NextResponse.redirect(`${appUrl}?error=db_insert_failed`);
+        return NextResponse.redirect(`${dashboardUrl}?error=db_insert_failed`);
       }
     }
 
