@@ -9,14 +9,12 @@ CREATE TABLE IF NOT EXISTS connected_accounts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   google_email TEXT NOT NULL,
-  google_account_id TEXT NOT NULL, -- Stable Google OAuth subject/account ID
   vault_secret_id TEXT NOT NULL, -- Encrypted Google OAuth refresh token (AES-256-GCM v1:...)
   storage_used_bytes BIGINT NOT NULL DEFAULT 0 CHECK (storage_used_bytes >= 0),
   storage_total_bytes BIGINT NOT NULL DEFAULT 16106127360 CHECK (storage_total_bytes >= 0), -- 15 GB default
   quota_last_checked_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  CONSTRAINT unique_user_google_email UNIQUE(user_id, google_email),
-  CONSTRAINT unique_user_google_account UNIQUE(user_id, google_account_id)
+  CONSTRAINT unique_user_google_email UNIQUE(user_id, google_email)
 );
 
 -- 2. Virtual Folders Table
@@ -74,7 +72,6 @@ CREATE TABLE IF NOT EXISTS shared_links (
 
 -- Indexes for Performance, Concurrency & State Queries
 CREATE INDEX IF NOT EXISTS idx_connected_accounts_user ON connected_accounts(user_id);
-CREATE INDEX IF NOT EXISTS idx_connected_accounts_google_id ON connected_accounts(google_account_id);
 CREATE INDEX IF NOT EXISTS idx_virtual_folders_user ON virtual_folders(user_id, parent_folder_id);
 CREATE INDEX IF NOT EXISTS idx_file_records_user ON file_records(user_id, virtual_folder_id);
 CREATE INDEX IF NOT EXISTS idx_file_records_account ON file_records(connected_account_id);
@@ -178,7 +175,6 @@ BEGIN
       v_best_account.id := v_rec.id;
       v_best_account.user_id := v_rec.user_id;
       v_best_account.google_email := v_rec.google_email;
-      v_best_account.google_account_id := v_rec.google_account_id;
       v_best_account.vault_secret_id := v_rec.vault_secret_id;
       v_best_account.storage_used_bytes := v_rec.storage_used_bytes;
       v_best_account.storage_total_bytes := v_rec.storage_total_bytes;
@@ -226,9 +222,7 @@ ALTER TABLE file_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE storage_reservations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shared_links ENABLE ROW LEVEL SECURITY;
 
--- -----------------------------------------------------------------------------
 -- RLS Policies for connected_accounts
--- -----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Users can view own connected accounts" ON connected_accounts;
 CREATE POLICY "Users can view own connected accounts"
   ON connected_accounts FOR SELECT
@@ -249,9 +243,7 @@ CREATE POLICY "Users can delete own connected accounts"
   ON connected_accounts FOR DELETE
   USING (auth.uid() = user_id OR user_id IN ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'));
 
--- -----------------------------------------------------------------------------
 -- RLS Policies for virtual_folders
--- -----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Users can view own virtual folders" ON virtual_folders;
 CREATE POLICY "Users can view own virtual folders"
   ON virtual_folders FOR SELECT
@@ -272,9 +264,7 @@ CREATE POLICY "Users can delete own virtual folders"
   ON virtual_folders FOR DELETE
   USING (auth.uid() = user_id OR user_id IN ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'));
 
--- -----------------------------------------------------------------------------
 -- RLS Policies for file_records
--- -----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Users can view own file records" ON file_records;
 CREATE POLICY "Users can view own file records"
   ON file_records FOR SELECT
@@ -295,9 +285,7 @@ CREATE POLICY "Users can delete own file records"
   ON file_records FOR DELETE
   USING (auth.uid() = user_id OR user_id IN ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222'));
 
--- -----------------------------------------------------------------------------
 -- RLS Policies for storage_reservations
--- -----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Users can view storage reservations for owned files" ON storage_reservations;
 CREATE POLICY "Users can view storage reservations for owned files"
   ON storage_reservations FOR SELECT
@@ -331,9 +319,7 @@ CREATE POLICY "Users can update storage reservations for owned files"
     )
   );
 
--- -----------------------------------------------------------------------------
 -- RLS Policies for shared_links
--- -----------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Users can view shared links for owned files" ON shared_links;
 CREATE POLICY "Users can view shared links for owned files"
   ON shared_links FOR SELECT

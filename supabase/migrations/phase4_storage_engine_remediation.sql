@@ -61,7 +61,6 @@ BEGIN
       v_best_account.id := v_rec.id;
       v_best_account.user_id := v_rec.user_id;
       v_best_account.google_email := v_rec.google_email;
-      v_best_account.google_account_id := v_rec.google_account_id;
       v_best_account.vault_secret_id := v_rec.vault_secret_id;
       v_best_account.storage_used_bytes := v_rec.storage_used_bytes;
       v_best_account.storage_total_bytes := v_rec.storage_total_bytes;

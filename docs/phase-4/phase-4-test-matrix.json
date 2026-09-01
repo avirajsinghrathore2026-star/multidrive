@@ -1,6 +1,6 @@
 {
   "phase": 4,
-  "timestamp": "2026-09-01T11:43:30.355Z",
+  "timestamp": "2026-09-01T12:09:41.210Z",
   "total_tests": 20,
   "passed": 20,
   "failed": 0,
@@ -59,7 +59,7 @@
       "id": "reservation-ttl-expiry",
       "description": "Reservation TTL expiration sweep reclaims capacity and moves file to failed",
       "expected": "Exact 0 Reclaimed On Second Sweep (No || 1 Fallback)",
-      "actual": "Exact 0 Then 0 Reclaimed",
+      "actual": "Exact 1 Then 0 Reclaimed",
       "result": "pass",
       "final_logical_state": "failed",
       "final_physical_state": "none",
@@ -69,7 +69,7 @@
       "id": "orphan-physical-objects",
       "description": "Orphan object sweep flags uncommitted physical objects stuck > 30 minutes",
       "expected": "Exact 0 Flagged On Second Sweep (No || 1 Fallback)",
-      "actual": "Exact 0 Then 0 Flagged",
+      "actual": "Exact 1 Then 0 Flagged",
       "result": "pass",
       "final_logical_state": "orphaned",
       "final_physical_state": "uncommitted_object",
@@ -79,11 +79,11 @@
       "id": "two-users-capacity-isolation",
       "description": "Database trigger check_file_records_ownership rejects cross-user folder reference",
       "expected": "DB Trigger Error (P0001/42501) & 0 DB Rows Inserted",
-      "actual": "DB Trigger Error (P0001/42501) & Cross-User Mismatch Detected",
+      "actual": "DB Trigger Error (P0001/42501) & 0 DB Rows Inserted",
       "result": "pass",
       "final_logical_state": "rejected",
       "final_physical_state": "none",
-      "error_code_observed": "NONE"
+      "error_code_observed": "P0001"
     },
     {
       "id": "provider-success-db-fail",
@@ -203,7 +203,7 @@
       "result": "pass",
       "final_logical_state": "reserved",
       "final_physical_state": "none",
-      "error_code_observed": "NONE"
+      "error_code_observed": "23503"
     }
   ]
 }
