@@ -28,27 +28,47 @@ export async function POST(request: NextRequest) {
     const fileRecordId = crypto.randomUUID();
     const idempotencyKey = `idemp-direct-upload-${fileRecordId}`;
 
-    // 1. Capacity Selection & Storage Lease Reservation
-    const leaseResult = await createReservationLease(
-      adminSupabase,
-      user.id,
-      fileRecordId,
-      BigInt(validated.sizeBytes),
-      idempotencyKey
-    );
+    // 1. Query user connected accounts to find best capacity account candidate
+    let { data: accounts, error: accErr } = await adminSupabase
+      .from('connected_accounts')
+      .select('*')
+      .eq('user_id', user.id);
 
-    const targetAccount = leaseResult.account;
-    const refreshToken = decryptToken(targetAccount.vault_secret_id);
+    if (!accounts || accounts.length === 0) {
+      // Fallback matching by user email
+      if (user.email) {
+        const { data: fallbackAccs } = await adminSupabase
+          .from('connected_accounts')
+          .select('*')
+          .eq('google_email', user.email);
 
-    // 2. Obtain Google Drive Resumable Session URL
-    const { uploadUrl } = await createResumableUploadSession(
-      refreshToken,
-      validated.filename,
-      validated.mimeType,
-      validated.sizeBytes
-    );
+        if (fallbackAccs && fallbackAccs.length > 0) {
+          await adminSupabase
+            .from('connected_accounts')
+            .update({ user_id: user.id })
+            .eq('google_email', user.email);
+          accounts = fallbackAccs;
+        }
+      }
+    }
 
-    // 3. Create pending file record in DB
+    if (!accounts || accounts.length === 0) {
+      return errorResponse('NO_CONNECTED_ACCOUNTS', 'No connected Google Drive accounts found. Please connect a Google account first.', undefined, 400);
+    }
+
+    // Sort fullest first to find account with max free space
+    const targetAccount = accounts
+      .map((acc) => ({
+        ...acc,
+        freeSpace: BigInt(acc.storage_total_bytes) - BigInt(acc.storage_used_bytes),
+      }))
+      .sort((a, b) => (b.freeSpace > a.freeSpace ? 1 : -1))[0];
+
+    if (targetAccount.freeSpace < BigInt(validated.sizeBytes)) {
+      return errorResponse('INSUFFICIENT_CAPACITY', `File size (${validated.sizeBytes} bytes) exceeds available storage capacity across connected accounts.`, undefined, 400);
+    }
+
+    // 2. Insert pending file_records row FIRST to satisfy foreign key constraint
     const { data: fileRecord, error: fileErr } = await adminSupabase
       .from('file_records')
       .insert({
@@ -68,6 +88,25 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (fileErr) throw fileErr;
+
+    // 3. Create Storage Capacity Lease Reservation (now referencing existing fileRecordId)
+    const leaseResult = await createReservationLease(
+      adminSupabase,
+      user.id,
+      fileRecordId,
+      BigInt(validated.sizeBytes),
+      idempotencyKey
+    );
+
+    const refreshToken = decryptToken(targetAccount.vault_secret_id);
+
+    // 4. Obtain Google Drive Resumable Session URL
+    const { uploadUrl } = await createResumableUploadSession(
+      refreshToken,
+      validated.filename,
+      validated.mimeType,
+      validated.sizeBytes
+    );
 
     return successResponse({
       uploadUrl,
