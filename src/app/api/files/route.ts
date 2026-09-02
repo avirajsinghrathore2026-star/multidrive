@@ -19,12 +19,12 @@ export async function GET(request: NextRequest) {
     // When folderId === 'all', skip folder filter to show all files.
     // Otherwise, filter by specific folder or root (null).
     if (!inTrash) {
-      if (folderId && folderId !== 'all') {
-        query = query.eq('virtual_folder_id', folderId);
-      } else if (!folderId) {
+      if (folderId === 'root' || !folderId) {
         query = query.is('virtual_folder_id', null);
+      } else if (folderId !== 'all') {
+        query = query.eq('virtual_folder_id', folderId);
       }
-      // folderId === 'all' → no folder filter, returns all non-trash files
+      // if folderId === 'all', no folder filter is applied
     }
 
     const { data, error } = await query.order('uploaded_at', { ascending: false });

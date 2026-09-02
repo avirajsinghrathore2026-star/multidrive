@@ -97,7 +97,7 @@ function DashboardContent() {
   // Load Accounts
   const fetchAccounts = useCallback(async () => {
     try {
-      const res = await fetch('/api/accounts');
+      const res = await fetch('/api/accounts', { headers: { 'Cache-Control': 'no-cache' }, cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
         setAccounts(json.data?.accounts || json.accounts || []);
@@ -110,8 +110,8 @@ function DashboardContent() {
   // Load Files
   const fetchFiles = useCallback(async (folderId: string | null) => {
     try {
-      const url = folderId ? `/api/files?folderId=${folderId}` : '/api/files?folderId=all';
-      const res = await fetch(url);
+      const url = folderId ? `/api/files?folderId=${folderId}` : '/api/files?folderId=root';
+      const res = await fetch(url, { headers: { 'Cache-Control': 'no-cache' }, cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
         setFiles(json.data?.files || json.files || []);
@@ -124,7 +124,7 @@ function DashboardContent() {
   // Load Folders
   const fetchFolders = useCallback(async () => {
     try {
-      const res = await fetch('/api/folders');
+      const res = await fetch('/api/folders', { headers: { 'Cache-Control': 'no-cache' }, cache: 'no-store' });
       if (res.ok) {
         const json = await res.json();
         setFolders(json.data?.folders || json.folders || []);
