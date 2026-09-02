@@ -151,6 +151,56 @@ export async function deleteDriveFile(refreshToken: string, googleDriveFileId: s
   });
 }
 
+export async function createResumableUploadSession(
+  refreshToken: string,
+  filename: string,
+  mimeType: string,
+  sizeBytes: number
+) {
+  if (isTestToken(refreshToken)) {
+    return {
+      uploadUrl: `https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&test_id=${crypto.randomUUID()}`,
+      mockFileId: `gdrive-mock-${crypto.randomUUID()}`,
+    };
+  }
+
+  const oauth2Client = getOAuth2Client();
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+
+  const accessRes = await oauth2Client.getAccessToken();
+  const accessToken = accessRes.token;
+
+  if (!accessToken) {
+    throw new Error('Google OAuth Token Error: Unable to acquire valid access token');
+  }
+
+  const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': mimeType || 'application/octet-stream',
+      'X-Upload-Content-Length': sizeBytes.toString(),
+    },
+    body: JSON.stringify({
+      name: filename,
+      mimeType: mimeType || 'application/octet-stream',
+    }),
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Google Resumable Upload Initiate Failed (${res.status}): ${errorText}`);
+  }
+
+  const uploadUrl = res.headers.get('location');
+  if (!uploadUrl) {
+    throw new Error('Google Drive API failed to return Resumable Upload Session URL');
+  }
+
+  return { uploadUrl };
+}
+
 export async function revokeGoogleToken(token: string) {
   if (isTestToken(token)) {
     return;
