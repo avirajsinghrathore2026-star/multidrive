@@ -172,9 +172,9 @@ export function handleApiError(err: any): NextResponse<ApiErrorEnvelope> {
     return errorResponse('CANCELLATION_REJECTED', err.message, undefined, 400);
   }
 
-  // Mask internal database/system traces (§7)
+  // Propagate custom domain & application errors clearly to client
   console.error('[api-utils] Unhandled API error:', err);
-  const userMessage = process.env.NODE_ENV === 'development' ? err.message || 'Internal server error' : 'Internal server error';
+  const userMessage = err.message || 'Internal server error';
 
   return errorResponse('INTERNAL_SERVER_ERROR', userMessage, undefined, 500);
 }

@@ -55,81 +55,110 @@ export const UploadModal: React.FC<UploadModalProps> = ({
     setErrorMessage(null);
 
     try {
-      // Step 1: Initiate Direct Resumable Upload Session (0 MB file payload to Vercel)
-      const initRes = await fetch('/api/jobs/upload/initiate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filename: selectedFile.name,
-          sizeBytes: selectedFile.size,
-          mimeType: selectedFile.type || 'application/octet-stream',
-          virtualFolderId: selectedFolderId || null,
-        }),
-      });
+      if (selectedFile.size <= 4 * 1024 * 1024) {
+        // Path A: Standard Server Upload for small files (<= 4 MB)
+        setUploadProgress(30);
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        if (selectedFolderId) {
+          formData.append('virtualFolderId', selectedFolderId);
+        }
 
-      const initData = await initRes.json();
-      if (!initRes.ok) {
-        throw new Error(initData.error?.message || initData.error || 'Failed to initiate upload session');
-      }
+        setUploadProgress(60);
+        const res = await fetch('/api/jobs/upload', {
+          method: 'POST',
+          body: formData,
+        });
 
-      const { uploadUrl, fileRecordId, reservationId, targetAccountEmail } = initData.data;
-      setTargetEmail(targetAccountEmail);
-      setUploadProgress(10);
+        const resText = await res.text();
+        let json: any = {};
+        try {
+          json = JSON.parse(resText);
+        } catch {
+          throw new Error(resText || 'Upload failed');
+        }
 
-      // Step 2: Stream File Directly from Browser to Google Drive using XMLHttpRequest
-      let driveFileId = `gdrive-uploaded-${fileRecordId}`;
+        if (!res.ok) {
+          throw new Error(json.error?.message || json.error || 'Upload failed');
+        }
 
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('PUT', uploadUrl, true);
-        xhr.setRequestHeader('Content-Type', selectedFile.type || 'application/octet-stream');
+        setUploadProgress(100);
+        setTargetEmail(bestAccount?.google_email || null);
+      } else {
+        // Path B: Direct Resumable Upload to Google Drive for large files (> 4 MB)
+        const initRes = await fetch('/api/jobs/upload/initiate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filename: selectedFile.name,
+            sizeBytes: selectedFile.size,
+            mimeType: selectedFile.type || 'application/octet-stream',
+            virtualFolderId: selectedFolderId || null,
+          }),
+        });
 
-        xhr.upload.onprogress = (event) => {
-          if (event.lengthComputable) {
-            const percentComplete = Math.round((event.loaded / event.total) * 85) + 10;
-            setUploadProgress(percentComplete);
-          }
-        };
+        const initData = await initRes.json();
+        if (!initRes.ok) {
+          throw new Error(initData.error?.message || initData.error || 'Failed to initiate upload session');
+        }
 
-        xhr.onload = () => {
-          if (xhr.status === 200 || xhr.status === 201) {
-            try {
-              const resp = JSON.parse(xhr.responseText);
-              if (resp.id) driveFileId = resp.id;
-            } catch {
-              // Completed
+        const { uploadUrl, fileRecordId, reservationId, targetAccountEmail } = initData.data;
+        setTargetEmail(targetAccountEmail);
+        setUploadProgress(10);
+
+        let driveFileId = `gdrive-uploaded-${fileRecordId}`;
+
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl, true);
+          xhr.setRequestHeader('Content-Type', selectedFile.type || 'application/octet-stream');
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percentComplete = Math.round((event.loaded / event.total) * 85) + 10;
+              setUploadProgress(percentComplete);
             }
-            resolve();
-          } else {
-            reject(new Error(`Google Drive Upload Error (${xhr.status}): ${xhr.statusText || 'Stream failed'}`));
-          }
-        };
+          };
 
-        xhr.onerror = () => reject(new Error('Network error occurred while streaming file to Google Drive.'));
-        xhr.ontimeout = () => reject(new Error('Upload to Google Drive timed out.'));
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 201) {
+              try {
+                const resp = JSON.parse(xhr.responseText);
+                if (resp.id) driveFileId = resp.id;
+              } catch {
+                // Session completed
+              }
+              resolve();
+            } else {
+              reject(new Error(`Google Drive Upload Error (${xhr.status}): ${xhr.statusText || 'Stream failed'}`));
+            }
+          };
 
-        xhr.send(selectedFile);
-      });
+          xhr.onerror = () => reject(new Error('Network error occurred while streaming file to Google Drive.'));
+          xhr.ontimeout = () => reject(new Error('Upload to Google Drive timed out.'));
 
-      setUploadProgress(95);
+          xhr.send(selectedFile);
+        });
 
-      // Step 3: Complete & Finalize Upload Record in DB
-      const completeRes = await fetch('/api/jobs/upload/complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fileRecordId,
-          googleDriveFileId: driveFileId,
-          reservationId,
-        }),
-      });
+        setUploadProgress(95);
 
-      if (!completeRes.ok) {
-        const compData = await completeRes.json();
-        throw new Error(compData.error?.message || compData.error || 'Failed to finalize upload record');
+        const completeRes = await fetch('/api/jobs/upload/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileRecordId,
+            googleDriveFileId: driveFileId,
+            reservationId,
+          }),
+        });
+
+        if (!completeRes.ok) {
+          const compData = await completeRes.json();
+          throw new Error(compData.error?.message || compData.error || 'Failed to finalize upload record');
+        }
+
+        setUploadProgress(100);
       }
-
-      setUploadProgress(100);
 
       setTimeout(() => {
         setIsUploading(false);
