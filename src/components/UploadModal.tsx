@@ -68,7 +68,16 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         body: formData,
       });
 
-      const json = await res.json();
+      const responseText = await res.text();
+      let json: any = {};
+      try {
+        json = JSON.parse(responseText);
+      } catch {
+        if (res.status === 413 || responseText.includes('Request Entity Too Large')) {
+          throw new Error('File size exceeds serverless limit (4.5 MB max on Vercel). Please select a file under 4.5 MB.');
+        }
+        throw new Error(responseText || 'Server returned an invalid response during upload.');
+      }
 
       if (!res.ok) {
         throw new Error(json.error?.message || json.error || 'Upload failed');
