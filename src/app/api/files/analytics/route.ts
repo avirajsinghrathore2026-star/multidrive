@@ -3,9 +3,9 @@ import { requireUser, AuthError } from '@/lib/auth';
 
 export async function GET() {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
-    const { data: files, error } = await supabase
+    const { data: files, error } = await adminSupabase
       .from('file_records')
       .select('id, filename, size_bytes, mime_type, uploaded_at')
       .eq('user_id', user.id)

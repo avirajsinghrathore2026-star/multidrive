@@ -8,7 +8,7 @@ import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // Rate Limiting Check (§5, §7)
     const rateLimit = await checkRateLimit(`job_archive:${user.id}`, 10, 60);
@@ -20,12 +20,12 @@ export async function POST(request: NextRequest) {
 
     // Fail Fast API Authorization Check on each file ID (§7)
     for (const fileId of validated.fileIds) {
-      await requireOwnedFile(supabase, user.id, fileId);
+      await requireOwnedFile(adminSupabase, user.id, fileId);
     }
 
     const idempotencyKey = validated.idempotencyKey || `idemp-job-archive-${crypto.randomUUID()}`;
 
-    const { job, isReused } = await createOrReuseJob(supabase, 'archive_jobs', user.id, idempotencyKey, {
+    const { job, isReused } = await createOrReuseJob(adminSupabase, 'archive_jobs', user.id, idempotencyKey, {
       file_record_ids: validated.fileIds,
     });
 
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const workerId = crypto.randomUUID();
-    const leasedJob = await acquireJobLease(supabase, 'archive_jobs', job.id, workerId);
+    const leasedJob = await acquireJobLease(adminSupabase, 'archive_jobs', job.id, workerId);
 
     if (!leasedJob) {
       return successResponse({ job, isReused: true, message: 'Job leased by another worker' });

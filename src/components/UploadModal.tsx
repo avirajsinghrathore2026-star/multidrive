@@ -63,19 +63,19 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
       setUploadProgress(50);
 
-      const res = await fetch('/api/files/upload', {
+      const res = await fetch('/api/jobs/upload', {
         method: 'POST',
         body: formData,
       });
 
-      const data = await res.json();
+      const json = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'Upload failed');
+        throw new Error(json.error?.message || json.error || 'Upload failed');
       }
 
       setUploadProgress(100);
-      setTargetEmail(data.accountEmail);
+      setTargetEmail(bestAccount?.google_email || null);
 
       setTimeout(() => {
         setIsUploading(false);

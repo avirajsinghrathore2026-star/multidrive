@@ -9,10 +9,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // 1. Verify file ownership strictly
-    const fileRecord = await requireOwnedFile(supabase, user.id, id);
+    const fileRecord = await requireOwnedFile(adminSupabase, user.id, id);
     const account = fileRecord.connected_accounts;
     const refreshToken = decryptToken(account.vault_secret_id);
 

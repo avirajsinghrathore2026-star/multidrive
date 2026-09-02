@@ -4,13 +4,13 @@ import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils'
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
     const { id } = await params;
 
     const tables = ['upload_jobs', 'migration_jobs', 'delete_jobs', 'archive_jobs'] as const;
 
     for (const table of tables) {
-      const { data, error } = await supabase
+      const { data, error } = await adminSupabase
         .from(table)
         .select('*')
         .eq('id', id)

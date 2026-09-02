@@ -73,6 +73,9 @@ function DashboardContent() {
         text: `Successfully connected Google Account: ${decodeURIComponent(email)}`,
         type: 'success',
       });
+      fetchAccounts();
+      fetchFiles(currentFolderId);
+      fetchFolders();
     } else if (error) {
       let errorText = decodeURIComponent(error);
       if (error === 'unauthenticated') {

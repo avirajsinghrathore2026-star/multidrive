@@ -75,4 +75,4 @@ Generate `docs/active/REPORT-PHASE-7.md` containing:
 *   Results of the manual verification checklist.
 
 ## 9. STOP CONDITION
-After completing implementation, generating the report, and updating `docs/PROJECT_STATE.md`, export the clean codebase zip and HALT. Await the Architect review before proceeding to Phase 8.
+After completing implementation, generating the report, and updating `docs/PROJECT_STATE.md`, export the clean codebase zip also from now on give the zip in active  and HALT. Await the Architect review before proceeding to Phase 8.

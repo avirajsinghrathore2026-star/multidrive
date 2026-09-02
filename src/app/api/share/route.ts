@@ -6,7 +6,7 @@ import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // Rate Limiting Check
     const rateLimit = await checkRateLimit(`share_link:${user.id}`, 20, 60);
@@ -17,14 +17,14 @@ export async function POST(request: NextRequest) {
     const validated = await parseAndValidateJson(request, ShareLinkSchema);
 
     // Fail Fast API Authorization Check (§7)
-    await requireOwnedFile(supabase, user.id, validated.fileId);
+    await requireOwnedFile(adminSupabase, user.id, validated.fileId);
 
     const token = crypto.randomBytes(16).toString('hex');
     const expiresAt = validated.expiresInHours
       ? new Date(Date.now() + validated.expiresInHours * 3600 * 1000).toISOString()
       : null;
 
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from('shared_links')
       .insert({
         file_id: validated.fileId,

@@ -6,7 +6,7 @@ import { BatchOperationSchema } from '@/lib/schemas/api-schemas';
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // Rate Limiting Check (§5, §7)
     const rateLimit = await checkRateLimit(`batch_files:${user.id}`, 15, 60);
@@ -18,20 +18,20 @@ export async function POST(request: NextRequest) {
 
     // Fail Fast Authorization Verification on all target files (§7)
     for (const fileId of validated.fileIds) {
-      await requireOwnedFile(supabase, user.id, fileId);
+      await requireOwnedFile(adminSupabase, user.id, fileId);
     }
 
     if (validated.action === 'delete') {
       const results = [];
       for (const fileId of validated.fileIds) {
-        await deleteFileRecord(supabase, user.id, fileId);
+        await deleteFileRecord(adminSupabase, user.id, fileId);
         results.push({ fileId, status: 'deleted' });
       }
       return successResponse({ action: 'delete', results });
     }
 
     if (validated.action === 'move') {
-      const { data, error } = await supabase
+      const { data, error } = await adminSupabase
         .from('file_records')
         .update({ virtual_folder_id: validated.targetFolderId || null })
         .in('id', validated.fileIds)

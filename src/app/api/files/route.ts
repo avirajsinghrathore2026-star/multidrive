@@ -4,17 +4,16 @@ import { successResponse, handleApiError } from '@/lib/api-utils';
 
 export async function GET(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
     const searchParams = request.nextUrl.searchParams;
     const folderId = searchParams.get('folderId');
     const inTrash = searchParams.get('inTrash') === 'true';
 
-    let query = supabase
+    let query = adminSupabase
       .from('file_records')
       .select('*')
       .eq('user_id', user.id)
-      .eq('in_trash', inTrash)
-      .eq('upload_state', 'complete');
+      .eq('in_trash', inTrash);
 
     if (folderId) {
       query = query.eq('virtual_folder_id', folderId);

@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 
 export class AuthError extends Error {
   statusCode: number;
@@ -15,6 +15,7 @@ export interface AuthenticatedContext {
     email?: string;
   };
   supabase: Awaited<ReturnType<typeof createClient>>;
+  adminSupabase: Awaited<ReturnType<typeof createAdminClient>>;
 }
 
 /**
@@ -24,6 +25,8 @@ export interface AuthenticatedContext {
  */
 export async function requireUser(): Promise<AuthenticatedContext> {
   const supabase = await createClient();
+  const adminSupabase = await createAdminClient();
+
   const { data: { user }, error } = await supabase.auth.getUser();
 
   if (error || !user) {
@@ -36,6 +39,7 @@ export async function requireUser(): Promise<AuthenticatedContext> {
       email: user.email,
     },
     supabase,
+    adminSupabase,
   };
 }
 

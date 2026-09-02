@@ -8,7 +8,7 @@ import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // Rate Limiting Check (§5, §7)
     const rateLimit = await checkRateLimit(`job_migration:${user.id}`, 10, 60);
@@ -19,12 +19,12 @@ export async function POST(request: NextRequest) {
     const validated = await parseAndValidateJson(request, MigrationJobSchema);
 
     // Fail Fast API Authorization Check (§7)
-    const fileRecord = await requireOwnedFile(supabase, user.id, validated.fileId);
-    await requireOwnedAccount(supabase, user.id, validated.destinationAccountId);
+    const fileRecord = await requireOwnedFile(adminSupabase, user.id, validated.fileId);
+    await requireOwnedAccount(adminSupabase, user.id, validated.destinationAccountId);
 
     const idempotencyKey = validated.idempotencyKey || `idemp-job-migrate-${validated.fileId}-${validated.destinationAccountId}`;
 
-    const { job, isReused } = await createOrReuseJob(supabase, 'migration_jobs', user.id, idempotencyKey, {
+    const { job, isReused } = await createOrReuseJob(adminSupabase, 'migration_jobs', user.id, idempotencyKey, {
       file_record_id: validated.fileId,
       source_account_id: fileRecord.connected_account_id,
       destination_account_id: validated.destinationAccountId,
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     }
 
     const workerId = crypto.randomUUID();
-    const leasedJob = await acquireJobLease(supabase, 'migration_jobs', job.id, workerId);
+    const leasedJob = await acquireJobLease(adminSupabase, 'migration_jobs', job.id, workerId);
 
     if (!leasedJob) {
       return successResponse({ job, isReused: true, message: 'Job leased by another worker' });

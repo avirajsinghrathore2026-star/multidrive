@@ -8,7 +8,7 @@ import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // Rate Limiting Check (§5, §7)
     const rateLimit = await checkRateLimit(`job_upload:${user.id}`, 20, 60);
@@ -20,6 +20,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null;
     const clientKey = formData.get('idempotencyKey') as string | null;
     const expectedMd5 = formData.get('expectedMd5') as string | null;
+    const virtualFolderId = formData.get('virtualFolderId') as string | null;
 
     if (!file) {
       return errorResponse('INVALID_ARGUMENT', 'No file provided in form-data payload', undefined, 400);
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     const idempotencyKey = validated.idempotencyKey || `idemp-job-upload-${crypto.randomUUID()}`;
 
     // Create or reuse upload job (§13)
-    const { job, isReused } = await createOrReuseJob(supabase, 'upload_jobs', user.id, idempotencyKey, {
+    const { job, isReused } = await createOrReuseJob(adminSupabase, 'upload_jobs', user.id, idempotencyKey, {
       size_bytes: validated.sizeBytes,
     });
 
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     // Acquire worker lease and process upload job
     const workerId = crypto.randomUUID();
-    const leasedJob = await acquireJobLease(supabase, 'upload_jobs', job.id, workerId);
+    const leasedJob = await acquireJobLease(adminSupabase, 'upload_jobs', job.id, workerId);
 
     if (!leasedJob) {
       return successResponse({ job, isReused: true, message: 'Job leased by another worker' });
@@ -54,7 +55,14 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    const completedJob = await processUploadJob(job.id, buffer, validated.expectedMd5);
+    const completedJob = await processUploadJob(
+      job.id,
+      buffer,
+      validated.expectedMd5,
+      file.name,
+      file.type || 'application/octet-stream',
+      virtualFolderId || undefined
+    );
     return successResponse({ job: completedJob, isReused });
   } catch (err: any) {
     return handleApiError(err);

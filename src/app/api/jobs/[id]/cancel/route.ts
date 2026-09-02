@@ -5,13 +5,13 @@ import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils'
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
     const { id } = await params;
 
     const tables = ['upload_jobs', 'migration_jobs', 'delete_jobs', 'archive_jobs'] as const;
 
     for (const table of tables) {
-      const { data: job } = await supabase
+      const { data: job } = await adminSupabase
         .from(table)
         .select('*')
         .eq('id', id)
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         .maybeSingle();
 
       if (job) {
-        const updatedJob = await requestJobCancellation(supabase, table, id, user.id);
+        const updatedJob = await requestJobCancellation(adminSupabase, table, id, user.id);
         return successResponse({ job: updatedJob });
       }
     }

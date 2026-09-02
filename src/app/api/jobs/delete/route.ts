@@ -8,7 +8,7 @@ import crypto from 'crypto';
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // Rate Limiting Check (§5, §7)
     const rateLimit = await checkRateLimit(`job_delete:${user.id}`, 20, 60);
@@ -19,10 +19,10 @@ export async function POST(request: NextRequest) {
     const validated = await parseAndValidateJson(request, DeleteJobSchema);
 
     // Fail Fast API Authorization Check (§7)
-    const fileRecord = await requireOwnedFile(supabase, user.id, validated.fileId);
+    const fileRecord = await requireOwnedFile(adminSupabase, user.id, validated.fileId);
     const idempotencyKey = validated.idempotencyKey || `idemp-job-delete-${validated.fileId}`;
 
-    const { job, isReused } = await createOrReuseJob(supabase, 'delete_jobs', user.id, idempotencyKey, {
+    const { job, isReused } = await createOrReuseJob(adminSupabase, 'delete_jobs', user.id, idempotencyKey, {
       file_record_id: validated.fileId,
       provider_object_id: fileRecord.google_drive_file_id,
     });
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     const workerId = crypto.randomUUID();
-    const leasedJob = await acquireJobLease(supabase, 'delete_jobs', job.id, workerId);
+    const leasedJob = await acquireJobLease(adminSupabase, 'delete_jobs', job.id, workerId);
 
     if (!leasedJob) {
       return successResponse({ job, isReused: true, message: 'Job leased by another worker' });

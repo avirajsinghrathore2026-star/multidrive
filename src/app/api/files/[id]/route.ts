@@ -5,10 +5,10 @@ import { successResponse, handleApiError } from '@/lib/api-utils';
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
     const { id } = await params;
 
-    const file = await requireOwnedFile(supabase, user.id, id);
+    const file = await requireOwnedFile(adminSupabase, user.id, id);
     return successResponse({ file });
   } catch (err: any) {
     return handleApiError(err);
@@ -17,11 +17,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
     const { id } = await params;
 
-    await requireOwnedFile(supabase, user.id, id);
-    await deleteFileRecord(supabase, user.id, id);
+    await requireOwnedFile(adminSupabase, user.id, id);
+    await deleteFileRecord(adminSupabase, user.id, id);
 
     return successResponse({ success: true, message: 'File deleted successfully' });
   } catch (err: any) {

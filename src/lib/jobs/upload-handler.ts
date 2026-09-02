@@ -19,7 +19,10 @@ import crypto from 'crypto';
 export async function processUploadJob(
   jobId: string,
   fileBuffer?: Buffer,
-  expectedMd5?: string
+  expectedMd5?: string,
+  filename?: string,
+  mimeType?: string,
+  virtualFolderId?: string
 ): Promise<JobEnvelope> {
   const admin = await createAdminClient();
 
@@ -83,9 +86,10 @@ export async function processUploadJob(
         user_id: job.user_id,
         connected_account_id: firstAcc.id,
         google_drive_file_id: 'pending-upload',
-        filename: 'upload_file.bin',
+        filename: filename || 'upload_file.bin',
         size_bytes: job.size_bytes,
-        mime_type: 'application/octet-stream',
+        mime_type: mimeType || 'application/octet-stream',
+        virtual_folder_id: virtualFolderId || null,
         upload_state: 'pending',
         idempotency_key: job.idempotency_key,
         uploaded_at: new Date().toISOString(),

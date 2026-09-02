@@ -5,9 +5,9 @@ import { CreateFolderSchema } from '@/lib/schemas/api-schemas';
 
 export async function GET(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from('virtual_folders')
       .select('*')
       .eq('user_id', user.id)
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
     // Rate Limiting Check
     const rateLimit = await checkRateLimit(`folders_create:${user.id}`, 30, 60);
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
     const validated = await parseAndValidateJson(request, CreateFolderSchema);
 
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from('virtual_folders')
       .insert({
         user_id: user.id,

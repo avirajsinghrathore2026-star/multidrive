@@ -4,9 +4,9 @@ import { successResponse, handleApiError } from '@/lib/api-utils';
 
 export async function GET(request: NextRequest) {
   try {
-    const { user, supabase } = await requireUser();
+    const { user, adminSupabase } = await requireUser();
 
-    const { data, error } = await supabase
+    const { data, error } = await adminSupabase
       .from('connected_accounts')
       .select('id, user_id, google_email, storage_used_bytes, storage_total_bytes, quota_last_checked_at, created_at')
       .eq('user_id', user.id)
