@@ -166,7 +166,7 @@ function DashboardContent() {
   const handleRefreshQuotas = async () => {
     setIsRefreshing(true);
     try {
-      const res = await fetch('/api/accounts', { method: 'POST', body: JSON.stringify({}) });
+      const res = await fetch('/api/accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
       if (res.ok) {
         await fetchAccounts();
         setToastMessage({ text: 'Storage quotas refreshed successfully', type: 'success' });
@@ -232,12 +232,12 @@ function DashboardContent() {
   };
 
   // Rename File
-  const handleRenameFile = async (fileId: string, currentName: string) => {
+  const handleRenameFile = async (fileId: string, newName: string) => {
     try {
       const res = await fetch(`/api/files/${fileId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename: currentName }),
+        body: JSON.stringify({ filename: newName }),
       });
       if (res.ok) {
         fetchFiles(currentFolderId);
@@ -245,6 +245,44 @@ function DashboardContent() {
       }
     } catch (err) {
       console.error('Rename error:', err);
+    }
+  };
+
+  // Delete Folder
+  const handleDeleteFolder = async (folderId: string) => {
+    if (!confirm('Delete this folder? All files inside will be moved to root.')) return;
+    try {
+      const res = await fetch(`/api/folders/${folderId}`, { method: 'DELETE' });
+      if (res.ok) {
+        await fetchFolders();
+        await fetchFiles(currentFolderId);
+        setToastMessage({ text: 'Folder deleted. Files moved to root.', type: 'success' });
+      } else {
+        const json = await res.json();
+        setToastMessage({ text: json.error?.message || 'Failed to delete folder', type: 'error' });
+      }
+    } catch (err) {
+      console.error('Delete folder error:', err);
+    }
+  };
+
+  // Rename Folder
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    try {
+      const res = await fetch(`/api/folders/${folderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName }),
+      });
+      if (res.ok) {
+        await fetchFolders();
+        setToastMessage({ text: `Folder renamed to "${newName}"`, type: 'success' });
+      } else {
+        const json = await res.json();
+        setToastMessage({ text: json.error?.message || 'Failed to rename folder', type: 'error' });
+      }
+    } catch (err) {
+      console.error('Rename folder error:', err);
     }
   };
 
@@ -409,6 +447,8 @@ function DashboardContent() {
                 onDownloadFile={handleDownloadFile}
                 onShareFile={(f) => setShareFile(f)}
                 onRefreshDashboard={refreshAllData}
+                onDeleteFolder={handleDeleteFolder}
+                onRenameFolder={handleRenameFolder}
               />
             </div>
           </div>

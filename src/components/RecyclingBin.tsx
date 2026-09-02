@@ -12,12 +12,10 @@ export const RecyclingBin: React.FC<{ onRefreshDashboard: () => void }> = ({ onR
   const fetchTrash = async () => {
     setIsLoading(true);
     try {
-      const res = await fetch('/api/files?folderId=all');
+      const res = await fetch('/api/files?inTrash=true');
       if (res.ok) {
         const json = await res.json();
-        // Filter in_trash === true
-        const inTrash = (json.files || []).filter((f: FileRecord & { in_trash?: boolean }) => f.in_trash);
-        setTrashedFiles(inTrash);
+        setTrashedFiles(json.data?.files || []);
       }
     } catch (err) {
       console.error('Failed to load trash:', err);

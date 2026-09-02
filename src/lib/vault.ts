@@ -45,7 +45,7 @@ export function decryptToken(encryptedPayload: string): string {
     throw new Error('Vault decryption failed: Invalid or empty payload');
   }
 
-  if (encryptedPayload.startsWith('v1:test_') || encryptedPayload === 'v1:test_vault_secret_a' || encryptedPayload === 'v1:test_vault_secret_b') {
+  if (encryptedPayload.startsWith('v1:test_')) {
     return 'test_vault_secret_a';
   }
 

@@ -107,7 +107,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
         const chunkSize = 3.5 * 1024 * 1024; // 3.5 MB per chunk (well under 4.5 MB Vercel limit)
         const totalBytes = selectedFile.size;
-        let driveFileId = `gdrive-uploaded-${fileRecordId}`;
+        let driveFileId: string | null = null;
 
         for (let start = 0; start < totalBytes; start += chunkSize) {
           const end = Math.min(start + chunkSize, totalBytes) - 1;
@@ -136,6 +136,10 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
           const percentComplete = Math.round(((end + 1) / totalBytes) * 85) + 10;
           setUploadProgress(percentComplete);
+        }
+
+        if (!driveFileId) {
+          throw new Error('Upload finished but Google Drive did not return a valid file ID. Please try again.');
         }
 
         setUploadProgress(95);

@@ -10,7 +10,10 @@ const SCOPES = [
 ];
 
 function isTestToken(refreshToken: string): boolean {
-  return !refreshToken || refreshToken.includes('test_vault_secret') || refreshToken.startsWith('test_') || refreshToken.includes('test');
+  // Narrowly match only explicit test/mock tokens — never match real Google OAuth tokens
+  return !refreshToken
+    || refreshToken.startsWith('test_')
+    || refreshToken.includes('test_vault_secret');
 }
 
 export function getOAuth2Client() {
@@ -114,8 +117,12 @@ export async function uploadStreamToDrive(
 }
 
 export async function getDriveFileStream(refreshToken: string, fileId: string) {
-  if (isTestToken(refreshToken) || fileId.startsWith('gdrive-')) {
+  if (isTestToken(refreshToken)) {
     return Readable.from(Buffer.from('mock file data stream for testing'));
+  }
+
+  if (!fileId || fileId.startsWith('gdrive-') || fileId.startsWith('pending-')) {
+    throw new Error(`INVALID_DRIVE_FILE_ID: Cannot stream file — invalid or placeholder Drive file ID: ${fileId}`);
   }
 
   const drive = getAuthenticatedDriveClient(refreshToken);

@@ -24,7 +24,12 @@ export async function POST(request: NextRequest) {
     const totalBytes = parseInt(totalBytesStr, 10);
     const chunkBuffer = Buffer.from(await chunk.arrayBuffer());
 
-    // Send 4 MB chunk to Google Drive Resumable Session URL with Content-Range header
+    // Security: Validate uploadUrl origin to prevent SSRF attacks
+    if (!uploadUrl.startsWith('https://www.googleapis.com/upload/drive/')) {
+      return errorResponse('INVALID_ARGUMENT', 'Invalid upload URL: must be a Google Drive resumable upload URL', undefined, 400);
+    }
+
+    // Send chunk to Google Drive Resumable Session URL with Content-Range header
     const googleRes = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
@@ -35,6 +40,8 @@ export async function POST(request: NextRequest) {
     });
 
     let googleDriveFileId: string | null = null;
+    const isFinal = googleRes.status === 200 || googleRes.status === 201;
+
     if (googleRes.ok || googleRes.status === 308) {
       const text = await googleRes.text();
       try {
@@ -44,10 +51,14 @@ export async function POST(request: NextRequest) {
         // 308 Resume Incomplete expected for non-final chunks
       }
 
+      if (isFinal && !googleDriveFileId) {
+        console.warn(`[chunk-upload] Final chunk received status ${googleRes.status} but no file ID in body: "${text}"`);
+      }
+
       return successResponse({
         statusCode: googleRes.status,
         googleDriveFileId,
-        isFinal: googleRes.status === 200 || googleRes.status === 201,
+        isFinal,
       });
     }
 

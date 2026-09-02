@@ -43,7 +43,9 @@ export const ShareLinkSchema = z.object({
 
 // 7. Batch File Operation Schema
 export const BatchOperationSchema = z.object({
-  action: z.enum(['delete', 'move', 'archive'], { message: "action must be 'delete', 'move', or 'archive'" }),
+  action: z.enum(['delete', 'move', 'archive', 'bulk_restore', 'bulk_permanent_delete'], {
+    message: "action must be 'delete', 'move', 'archive', 'bulk_restore', or 'bulk_permanent_delete'",
+  }),
   fileIds: z.array(UuidSchema).min(1, { message: 'At least one fileId is required' }),
   targetFolderId: UuidSchema.optional().nullable(),
 });

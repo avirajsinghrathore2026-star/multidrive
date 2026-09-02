@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { requireUser } from '@/lib/auth';
-import { createReservationLease } from '@/lib/storage-engine';
+import { createReservationLease, transitionUploadState } from '@/lib/storage-engine';
 import { createResumableUploadSession } from '@/lib/google-drive';
 import { decryptToken } from '@/lib/vault';
 import { successResponse, errorResponse, handleApiError, parseAndValidateJson, checkRateLimit } from '@/lib/api-utils';
@@ -14,9 +14,16 @@ const InitiateUploadSchema = z.object({
   virtualFolderId: z.string().optional().nullable(),
 });
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
+  let fileRecordCreated = false;
+  let fileRecordId: string | null = null;
+  let adminSupabaseRef: any = null;
+
   try {
     const { user, adminSupabase } = await requireUser();
+    adminSupabaseRef = adminSupabase;
 
     // Rate limiting
     const rateLimit = await checkRateLimit(`job_upload_initiate:${user.id}`, 30, 60);
@@ -25,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     const validated = await parseAndValidateJson(request, InitiateUploadSchema);
-    const fileRecordId = crypto.randomUUID();
+    fileRecordId = crypto.randomUUID();
     const idempotencyKey = `idemp-direct-upload-${fileRecordId}`;
 
     // 1. Query user connected accounts to find best capacity account candidate
@@ -80,7 +87,7 @@ export async function POST(request: NextRequest) {
         size_bytes: validated.sizeBytes,
         mime_type: validated.mimeType,
         virtual_folder_id: validated.virtualFolderId || null,
-        upload_state: 'uploading',
+        upload_state: 'pending',
         idempotency_key: idempotencyKey,
         uploaded_at: new Date().toISOString(),
       })
@@ -88,6 +95,7 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (fileErr) throw fileErr;
+    fileRecordCreated = true;
 
     // 3. Create Storage Capacity Lease Reservation (now referencing existing fileRecordId)
     const leaseResult = await createReservationLease(
@@ -97,6 +105,12 @@ export async function POST(request: NextRequest) {
       BigInt(validated.sizeBytes),
       idempotencyKey
     );
+
+    // Transition to reserved then uploading
+    await transitionUploadState(adminSupabase, fileRecordId, 'pending', 'reserved', {
+      connected_account_id: targetAccount.id,
+    });
+    await transitionUploadState(adminSupabase, fileRecordId, 'reserved', 'uploading');
 
     const refreshToken = decryptToken(targetAccount.vault_secret_id);
 
@@ -115,6 +129,14 @@ export async function POST(request: NextRequest) {
       targetAccountEmail: targetAccount.google_email,
     });
   } catch (err: any) {
+    if (fileRecordCreated && fileRecordId && adminSupabaseRef) {
+      // Clean up orphaned pending file_record row if initiation fails after insertion
+      try {
+        await adminSupabaseRef.from('file_records').delete().eq('id', fileRecordId);
+      } catch (cleanupErr) {
+        console.error('Failed to cleanup orphan file record on initiate failure:', cleanupErr);
+      }
+    }
     return handleApiError(err);
   }
 }

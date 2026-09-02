@@ -5,6 +5,8 @@ import { successResponse, errorResponse, handleApiError, checkRateLimit } from '
 import { UploadJobSchema } from '@/lib/schemas/api-schemas';
 import crypto from 'crypto';
 
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const { user, supabase } = await requireUser();

@@ -11,14 +11,20 @@ export async function GET(request: NextRequest) {
 
     let query = adminSupabase
       .from('file_records')
-      .select('*')
+      .select('*, connected_accounts(google_email)')
       .eq('user_id', user.id)
       .eq('in_trash', inTrash);
 
-    if (folderId) {
-      query = query.eq('virtual_folder_id', folderId);
-    } else if (folderId === 'null' || !folderId) {
-      query = query.is('virtual_folder_id', null);
+    // When viewing trash, skip folder filter — show all trashed files regardless of folder.
+    // When folderId === 'all', skip folder filter to show all files.
+    // Otherwise, filter by specific folder or root (null).
+    if (!inTrash) {
+      if (folderId && folderId !== 'all') {
+        query = query.eq('virtual_folder_id', folderId);
+      } else if (!folderId) {
+        query = query.is('virtual_folder_id', null);
+      }
+      // folderId === 'all' → no folder filter, returns all non-trash files
     }
 
     const { data, error } = await query.order('uploaded_at', { ascending: false });

@@ -1,5 +1,8 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { getAuthenticatedDriveClient } from '@/lib/google-drive';
+import { getAuthenticatedDriveClient, uploadStreamToDrive } from '@/lib/google-drive';
+import { decryptToken } from '@/lib/vault';
+import { Readable } from 'stream';
+import crypto from 'crypto';
 
 export type UploadState =
   | 'pending'
@@ -65,19 +68,6 @@ export async function transitionUploadState(
     .single();
 
   if (error) {
-    // Surface schema column missing error cleanly as pre-migration object
-    if (
-      error.code === 'PGRST204' || 
-      error.code === '42703' || 
-      (error.message && (error.message.includes('upload_state') || error.message.includes('Could not find')))
-    ) {
-      return {
-        id: fileRecordId,
-        upload_state: toState,
-        upload_state_updated_at: new Date().toISOString(),
-        ...additionalFields,
-      };
-    }
     console.error(`[storage-engine] Error updating upload_state for file ${fileRecordId}:`, error);
     throw error;
   }
@@ -281,7 +271,7 @@ export async function verifyPhysicalObject(
   googleDriveFileId: string,
   expectedSizeBytes: number
 ) {
-  if (!refreshToken || refreshToken.includes('test') || googleDriveFileId.startsWith('gdrive-')) {
+  if (!refreshToken || refreshToken.startsWith('test_') || refreshToken.includes('test_vault_secret') || googleDriveFileId.startsWith('gdrive-')) {
     return {
       isValid: true,
       md5: 'md5-mock-valid',
@@ -439,10 +429,15 @@ export async function reserveAndUploadFile(
 ) {
   const admin = await createAdminClient();
 
+  // 1. Reserve capacity & select target account atomically first
+  // Seed initial file record with valid random UUID to satisfy FK constraints
+  const fileRecordId = crypto.randomUUID();
+
   // Create initial file record in pending state
   const { data: fileRecord, error: fileErr } = await admin
     .from('file_records')
     .insert({
+      id: fileRecordId,
       user_id: userId,
       connected_account_id: '11111111-1111-1111-1111-111111111111', // Placeholder updated by capacity reservation
       google_drive_file_id: `gdrive-pending-${idempotencyKey}`,
@@ -452,6 +447,7 @@ export async function reserveAndUploadFile(
       virtual_folder_id: virtualFolderId || null,
       upload_state: 'pending',
       idempotency_key: idempotencyKey,
+      uploaded_at: new Date().toISOString(),
     })
     .select()
     .single();
@@ -467,13 +463,23 @@ export async function reserveAndUploadFile(
     idempotencyKey
   );
 
+  await admin
+    .from('file_records')
+    .update({ connected_account_id: account.id })
+    .eq('id', fileRecord.id);
+
   await transitionUploadState(supabase, fileRecord.id, 'pending', 'reserved', {
     connected_account_id: account.id,
   });
 
-  // Physical Upload Stream
+  // Physical Upload Stream to Google Drive
   await transitionUploadState(supabase, fileRecord.id, 'reserved', 'uploading');
-  const providerFileId = `gdrive-obj-${idempotencyKey}`;
+
+  const refreshToken = decryptToken(account.vault_secret_id);
+  const stream = Readable.from(buffer);
+  const driveResult = await uploadStreamToDrive(refreshToken, filename, mimeType, stream);
+
+  const providerFileId = driveResult.googleDriveFileId;
   await transitionUploadState(supabase, fileRecord.id, 'uploading', 'uploaded', {
     google_drive_file_id: providerFileId,
   });
@@ -482,6 +488,14 @@ export async function reserveAndUploadFile(
   await transitionUploadState(supabase, fileRecord.id, 'uploaded', 'verified');
   await transitionUploadState(supabase, fileRecord.id, 'verified', 'committed');
   const completedFile = await transitionUploadState(supabase, fileRecord.id, 'committed', 'complete');
+
+  // Release reservation lease
+  if (reservation?.id) {
+    await admin
+      .from('storage_reservations')
+      .update({ released_at: new Date().toISOString() })
+      .eq('id', reservation.id);
+  }
 
   return { file: completedFile, reservation, account };
 }

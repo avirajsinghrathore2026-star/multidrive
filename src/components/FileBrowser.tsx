@@ -22,6 +22,8 @@ import {
   Square,
   Layers,
   Archive,
+  X,
+  Check,
 } from 'lucide-react';
 import { formatBytes } from './StorageDashboard';
 
@@ -59,6 +61,8 @@ interface FileBrowserProps {
   onDownloadFile: (file: FileRecord) => void;
   onShareFile: (file: FileRecord) => void;
   onRefreshDashboard: () => void;
+  onDeleteFolder?: (folderId: string) => void;
+  onRenameFolder?: (folderId: string, newName: string) => void;
 }
 
 function getFileIcon(mimeType: string) {
@@ -81,12 +85,18 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
   onDownloadFile,
   onShareFile,
   onRefreshDashboard,
+  onDeleteFolder,
+  onRenameFolder,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedFileIds, setSelectedFileIds] = useState<string[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renamingFolderValue, setRenamingFolderValue] = useState('');
+  const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
+  const [renamingFileValue, setRenamingFileValue] = useState('');
 
   // Filter active files (excluding trashed files)
   const activeFiles = files.filter((f) => !f.in_trash);
@@ -150,7 +160,7 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
       const res = await fetch('/api/files/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bulk_delete', fileIds: selectedFileIds }),
+        body: JSON.stringify({ action: 'delete', fileIds: selectedFileIds }),
       });
 
       if (res.ok) {
@@ -164,16 +174,15 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
     }
   };
 
-  // Batch Move to Virtual Folder
+  // Batch Move to Virtual Folder (moves selected files to root)
   const handleBatchMove = async () => {
     if (selectedFileIds.length === 0) return;
-    const targetId = prompt('Enter folder ID or leave blank for root:');
     setIsBatchProcessing(true);
     try {
       const res = await fetch('/api/files/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'bulk_move', fileIds: selectedFileIds, targetFolderId: targetId || null }),
+        body: JSON.stringify({ action: 'move', fileIds: selectedFileIds, targetFolderId: null }),
       });
 
       if (res.ok) {
@@ -314,14 +323,58 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
           <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Virtual Folders</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
             {folders.map((folder) => (
-              <button
-                key={folder.id}
-                onClick={() => onSelectFolder(folder.id)}
-                className="flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-900/90 p-2.5 text-left transition hover:border-slate-700 hover:bg-slate-800"
-              >
-                <Folder className="h-5 w-5 text-amber-400 shrink-0" />
-                <span className="text-xs font-medium text-slate-200 truncate">{folder.name}</span>
-              </button>
+              <div key={folder.id} className="group relative rounded-xl border border-slate-800 bg-slate-900/90 transition hover:border-slate-700 hover:bg-slate-800">
+                {renamingFolderId === folder.id ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (renamingFolderValue.trim() && onRenameFolder) {
+                        onRenameFolder(folder.id, renamingFolderValue.trim());
+                      }
+                      setRenamingFolderId(null);
+                    }}
+                    className="flex items-center gap-1 p-2"
+                  >
+                    <input
+                      autoFocus
+                      value={renamingFolderValue}
+                      onChange={(e) => setRenamingFolderValue(e.target.value)}
+                      className="h-6 flex-1 min-w-0 rounded bg-slate-800 border border-indigo-500/40 px-1.5 text-xs text-white focus:outline-none"
+                    />
+                    <button type="submit" className="text-emerald-400 hover:text-emerald-300"><Check className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={() => setRenamingFolderId(null)} className="text-slate-500 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => onSelectFolder(folder.id)}
+                    className="flex w-full items-center gap-2.5 p-2.5 text-left"
+                  >
+                    <Folder className="h-5 w-5 text-amber-400 shrink-0" />
+                    <span className="text-xs font-medium text-slate-200 truncate flex-1">{folder.name}</span>
+                  </button>
+                )}
+                {/* Folder action buttons — visible on hover */}
+                {renamingFolderId !== folder.id && (
+                  <div className="absolute right-1 top-1 hidden group-hover:flex items-center gap-0.5 bg-slate-900/90 rounded-lg p-0.5">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setRenamingFolderId(folder.id); setRenamingFolderValue(folder.name); }}
+                      className="rounded p-1 text-slate-500 hover:text-amber-400 hover:bg-slate-800 transition"
+                      title="Rename Folder"
+                    >
+                      <Edit2 className="h-3 w-3" />
+                    </button>
+                    {onDeleteFolder && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onDeleteFolder(folder.id); }}
+                        className="rounded p-1 text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition"
+                        title="Delete Folder"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -415,18 +468,34 @@ export const FileBrowser: React.FC<FileBrowserProps> = ({
                           <Download className="h-4 w-4" />
                         </button>
 
-                        <button
-                          onClick={() => {
-                            const newName = prompt('Enter new filename:', file.filename);
-                            if (newName && newName.trim()) {
-                              onRenameFile(file.id, newName.trim());
-                            }
-                          }}
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-amber-400 transition"
-                          title="Rename File"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
+                        {renamingFileId === file.id ? (
+                          <form
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              if (renamingFileValue.trim()) onRenameFile(file.id, renamingFileValue.trim());
+                              setRenamingFileId(null);
+                            }}
+                            className="flex items-center gap-1"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              autoFocus
+                              value={renamingFileValue}
+                              onChange={(e) => setRenamingFileValue(e.target.value)}
+                              className="h-7 w-36 rounded border border-indigo-500/40 bg-slate-800 px-2 text-xs text-white focus:outline-none"
+                            />
+                            <button type="submit" className="rounded p-1 text-emerald-400 hover:text-emerald-300"><Check className="h-3.5 w-3.5" /></button>
+                            <button type="button" onClick={() => setRenamingFileId(null)} className="rounded p-1 text-slate-500 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+                          </form>
+                        ) : (
+                          <button
+                            onClick={() => { setRenamingFileId(file.id); setRenamingFileValue(file.filename); }}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-800 hover:text-amber-400 transition"
+                            title="Rename File"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                        )}
 
                         <button
                           onClick={() => onDeleteFile(file.id)}

@@ -34,7 +34,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({ file, onClose }) => {
 
       const json = await res.json();
       if (res.ok) {
-        setGeneratedUrl(json.publicUrl);
+        setGeneratedUrl(json.data?.url || null);
+        if (!json.data?.url) {
+          console.error('Share link created but URL was missing in response:', json);
+        }
       }
     } catch (err) {
       console.error('Failed to generate share link:', err);
