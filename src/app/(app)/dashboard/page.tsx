@@ -248,6 +248,21 @@ function DashboardContent() {
     }
   };
 
+  const handleDisconnectAccount = async (accountId: string) => {
+    try {
+      const res = await fetch(`/api/accounts?id=${accountId}`, { method: 'DELETE' });
+      if (res.ok) {
+        setAccounts((prev) => prev.filter((a) => a.id !== accountId));
+        setToastMessage({ text: 'Google account disconnected successfully', type: 'success' });
+      } else {
+        const json = await res.json();
+        setToastMessage({ text: json.error?.message || 'Failed to disconnect account', type: 'error' });
+      }
+    } catch (err) {
+      console.error('Failed to disconnect account:', err);
+    }
+  };
+
   // Download File Handler
   const handleDownloadFile = (file: FileRecord) => {
     const downloadUrl = `/api/files/${file.id}/download`;
@@ -324,7 +339,7 @@ function DashboardContent() {
               }`}
             >
               <BarChart3 className="h-4 w-4" />
-              <span>Analytics & Breakdown</span>
+              <span>Analytics</span>
             </button>
 
             <button
@@ -336,7 +351,7 @@ function DashboardContent() {
               }`}
             >
               <Copy className="h-4 w-4" />
-              <span>Duplicate Finder</span>
+              <span>Duplicates Scanner</span>
             </button>
 
             <button
@@ -369,7 +384,12 @@ function DashboardContent() {
         {/* Tab 1: Overview & Files */}
         {activeTab === 'overview' && (
           <div className="space-y-10">
-            <StorageDashboard accounts={accounts} onRefresh={handleRefreshQuotas} isRefreshing={isRefreshing} />
+            <StorageDashboard
+              accounts={accounts}
+              onRefresh={handleRefreshQuotas}
+              isRefreshing={isRefreshing}
+              onDisconnectAccount={handleDisconnectAccount}
+            />
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">

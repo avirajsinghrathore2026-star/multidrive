@@ -11,10 +11,11 @@ export interface AccountData {
   quota_last_checked_at: string;
 }
 
-interface StorageDashboardProps {
+export interface StorageDashboardProps {
   accounts: AccountData[];
   onRefresh: () => void;
   isRefreshing: boolean;
+  onDisconnectAccount?: (accountId: string) => void;
 }
 
 export function formatBytes(bytes: number, decimals = 1): string {
@@ -30,7 +31,10 @@ export const StorageDashboard: React.FC<StorageDashboardProps> = ({
   accounts,
   onRefresh,
   isRefreshing,
+  onDisconnectAccount,
 }) => {
+  const [disconnectingId, setDisconnectingId] = React.useState<string | null>(null);
+
   // Compute totals
   const totalUsed = accounts.reduce((acc, curr) => acc + Number(curr.storage_used_bytes || 0), 0);
   const totalCapacity = accounts.reduce((acc, curr) => acc + Number(curr.storage_total_bytes || 0), 0);
@@ -146,10 +150,12 @@ export const StorageDashboard: React.FC<StorageDashboardProps> = ({
                 badgeColor = 'text-amber-400 bg-amber-500/10 border-amber-500/20';
               }
 
+              const isConfirming = disconnectingId === acc.id;
+
               return (
                 <div
                   key={acc.id}
-                  className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 transition-all hover:border-slate-700 hover:shadow-md"
+                  className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 transition-all hover:border-slate-700 hover:shadow-md relative group"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="truncate">
@@ -160,9 +166,40 @@ export const StorageDashboard: React.FC<StorageDashboardProps> = ({
                         Free space: <span className="text-slate-200 font-medium">{formatBytes(freeSpace)}</span>
                       </p>
                     </div>
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-bold ${badgeColor}`}>
-                      {percentage}%
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-bold ${badgeColor}`}>
+                        {percentage}%
+                      </span>
+                      {onDisconnectAccount && (
+                        isConfirming ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                onDisconnectAccount(acc.id);
+                                setDisconnectingId(null);
+                              }}
+                              className="text-[10px] bg-rose-600 hover:bg-rose-500 text-white font-bold px-2 py-0.5 rounded transition"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setDisconnectingId(null)}
+                              className="text-[10px] bg-slate-800 text-slate-400 hover:text-white px-1.5 py-0.5 rounded"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDisconnectingId(acc.id)}
+                            title="Disconnect Account"
+                            className="text-slate-500 hover:text-rose-400 p-1 rounded-lg hover:bg-slate-800 transition"
+                          >
+                            <AlertCircle className="h-4 w-4" />
+                          </button>
+                        )
+                      )}
+                    </div>
                   </div>
 
                   {/* Progress Bar */}
