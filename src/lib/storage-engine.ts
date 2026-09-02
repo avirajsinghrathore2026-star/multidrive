@@ -160,10 +160,29 @@ export async function createReservationLease(
       rpcError.code === 'PGRST205' || 
       (rpcError.message && rpcError.message.includes('Could not find'))
     ) {
-      const { data: accounts, error: accountsErr } = await admin
+      let { data: accounts, error: accountsErr } = await admin
         .from('connected_accounts')
         .select('*')
         .eq('user_id', userId);
+
+      if ((!accounts || accounts.length === 0)) {
+        // Fallback: search by user auth email if available
+        const { data: authUser } = await admin.auth.admin.getUserById(userId);
+        if (authUser?.user?.email) {
+          const { data: rebindAccs } = await admin
+            .from('connected_accounts')
+            .select('*')
+            .eq('google_email', authUser.user.email);
+
+          if (rebindAccs && rebindAccs.length > 0) {
+            await admin
+              .from('connected_accounts')
+              .update({ user_id: userId })
+              .eq('google_email', authUser.user.email);
+            accounts = rebindAccs;
+          }
+        }
+      }
 
       if (accountsErr || !accounts || accounts.length === 0) {
         throw new Error(`NO_CONNECTED_ACCOUNTS: No Google Drive accounts found for user ${userId}.`);
