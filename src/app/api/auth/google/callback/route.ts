@@ -35,41 +35,35 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // 1. Enforce authenticated MultiDrive user session
-    const { user, supabase } = await requireUser();
-
-    // 2. Validate OAuth state cookie & match URL parameter
-    const cookieStore = await cookies();
-    const cookieState = cookieStore.get('md_oauth_state')?.value;
-
-    if (!cookieState || cookieState !== stateParam) {
-      console.error('OAuth callback failed: State cookie mismatch or state missing');
-      return NextResponse.redirect(`${appUrl}?error=oauth_state_mismatch`);
+    // 1. Decrypt and verify state payload cryptographically (AES-256-GCM authenticated)
+    let parsedState: { userId: string; nonce: string; createdAt: number };
+    try {
+      const decryptedPayload = decryptToken(stateParam);
+      parsedState = JSON.parse(decryptedPayload);
+    } catch (decryptErr) {
+      console.error('OAuth callback failed: Invalid or tampered state token:', decryptErr);
+      return NextResponse.redirect(`${dashboardUrl}?error=oauth_state_invalid`);
     }
 
-    // Immediately delete state cookie & register in consumed cache to enforce single-use replay prevention
-    cookieStore.set('md_oauth_state', '', { path: '/', maxAge: 0 });
-    consumedOAuthStates.add(stateParam);
+    if (!parsedState.userId) {
+      console.error('OAuth callback failed: Missing userId in state payload');
+      return NextResponse.redirect(`${dashboardUrl}?error=oauth_state_invalid`);
+    }
 
+    // Single-use Replay Protection
+    consumedOAuthStates.add(stateParam);
     if (consumedOAuthStates.size > 1000) {
       const firstItem = consumedOAuthStates.values().next().value;
       if (firstItem) consumedOAuthStates.delete(firstItem);
     }
 
-    // Decrypt and verify state payload
-    const decryptedPayload = decryptToken(stateParam);
-    const parsedState = JSON.parse(decryptedPayload);
-
-    if (parsedState.userId !== user.id) {
-      console.error('OAuth callback failed: Initiating user_id mismatch');
-      return NextResponse.redirect(`${appUrl}?error=oauth_user_mismatch`);
-    }
-
     // Check state expiration (10 minutes max)
     if (Date.now() - parsedState.createdAt > 600000) {
       console.error('OAuth callback failed: State expired');
-      return NextResponse.redirect(`${appUrl}?error=oauth_state_expired`);
+      return NextResponse.redirect(`${dashboardUrl}?error=oauth_state_expired`);
     }
+
+    const targetUserId = parsedState.userId;
 
     // 3. Exchange authorization code for Google tokens
     const oauth2Client = getOAuth2Client();
@@ -88,7 +82,6 @@ export async function GET(request: NextRequest) {
 
     // 4. Query existing connected account for this user using admin client to prevent RLS cookie loss during cross-site redirect
     const adminSupabase = await createAdminClient();
-    const targetUserId = parsedState.userId || user.id;
 
     const { data: existingAccounts } = await adminSupabase
       .from('connected_accounts')
