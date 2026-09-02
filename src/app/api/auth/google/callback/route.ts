@@ -124,6 +124,7 @@ export async function GET(request: NextRequest) {
         console.error('Failed to update connected account in DB:', updateError);
         return NextResponse.redirect(`${dashboardUrl}?error=db_update_failed`);
       }
+    } else {
       // Primary insert attempt (with google_account_id)
       let insertObj: Record<string, any> = {
         user_id: targetUserId,
