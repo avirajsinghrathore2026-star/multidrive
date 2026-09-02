@@ -85,7 +85,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
         setUploadProgress(100);
         setTargetEmail(bestAccount?.google_email || null);
       } else {
-        // Path B: Direct Resumable Upload to Google Drive for large files (> 4 MB)
+        // Path B: Chunked Resumable Upload (3.5 MB chunks) for large files (> 4 MB)
         const initRes = await fetch('/api/jobs/upload/initiate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -104,41 +104,39 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
         const { uploadUrl, fileRecordId, reservationId, targetAccountEmail } = initData.data;
         setTargetEmail(targetAccountEmail);
-        setUploadProgress(10);
 
+        const chunkSize = 3.5 * 1024 * 1024; // 3.5 MB per chunk (well under 4.5 MB Vercel limit)
+        const totalBytes = selectedFile.size;
         let driveFileId = `gdrive-uploaded-${fileRecordId}`;
 
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('PUT', uploadUrl, true);
-          xhr.setRequestHeader('Content-Type', selectedFile.type || 'application/octet-stream');
+        for (let start = 0; start < totalBytes; start += chunkSize) {
+          const end = Math.min(start + chunkSize, totalBytes) - 1;
+          const chunkBlob = selectedFile.slice(start, end + 1);
 
-          xhr.upload.onprogress = (event) => {
-            if (event.lengthComputable) {
-              const percentComplete = Math.round((event.loaded / event.total) * 85) + 10;
-              setUploadProgress(percentComplete);
-            }
-          };
+          const chunkForm = new FormData();
+          chunkForm.append('uploadUrl', uploadUrl);
+          chunkForm.append('chunk', chunkBlob, selectedFile.name);
+          chunkForm.append('startByte', start.toString());
+          chunkForm.append('endByte', end.toString());
+          chunkForm.append('totalBytes', totalBytes.toString());
 
-          xhr.onload = () => {
-            if (xhr.status === 200 || xhr.status === 201) {
-              try {
-                const resp = JSON.parse(xhr.responseText);
-                if (resp.id) driveFileId = resp.id;
-              } catch {
-                // Session completed
-              }
-              resolve();
-            } else {
-              reject(new Error(`Google Drive Upload Error (${xhr.status}): ${xhr.statusText || 'Stream failed'}`));
-            }
-          };
+          const chunkRes = await fetch('/api/jobs/upload/chunk', {
+            method: 'POST',
+            body: chunkForm,
+          });
 
-          xhr.onerror = () => reject(new Error('Network error occurred while streaming file to Google Drive.'));
-          xhr.ontimeout = () => reject(new Error('Upload to Google Drive timed out.'));
+          const chunkData = await chunkRes.json();
+          if (!chunkRes.ok) {
+            throw new Error(chunkData.error?.message || chunkData.error || 'Chunk upload failed');
+          }
 
-          xhr.send(selectedFile);
-        });
+          if (chunkData.data?.googleDriveFileId) {
+            driveFileId = chunkData.data.googleDriveFileId;
+          }
+
+          const percentComplete = Math.round(((end + 1) / totalBytes) * 85) + 10;
+          setUploadProgress(percentComplete);
+        }
 
         setUploadProgress(95);
 
