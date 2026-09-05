@@ -2,6 +2,8 @@ import { NextRequest } from 'next/server';
 import { requireUser } from '@/lib/auth';
 import { successResponse, handleApiError } from '@/lib/api-utils';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { user, adminSupabase } = await requireUser();

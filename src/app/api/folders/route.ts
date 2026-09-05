@@ -3,6 +3,8 @@ import { requireUser } from '@/lib/auth';
 import { successResponse, handleApiError, parseAndValidateJson, checkRateLimit, errorResponse } from '@/lib/api-utils';
 import { CreateFolderSchema } from '@/lib/schemas/api-schemas';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { user, adminSupabase } = await requireUser();

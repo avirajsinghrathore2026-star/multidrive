@@ -4,6 +4,8 @@ import { successResponse, errorResponse, handleApiError } from '@/lib/api-utils'
 import { decryptToken } from '@/lib/vault';
 import { fetchGoogleAccountDetails, revokeGoogleToken } from '@/lib/google-drive';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { user, adminSupabase } = await requireUser();
