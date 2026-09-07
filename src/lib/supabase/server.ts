@@ -1,15 +1,38 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
-// Default values removed for security. 
-// Keys must be provided via environment variables.
+function getSupabaseUrl(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
+}
+
+function getSupabaseAnonKey(): string {
+  return (
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    ''
+  );
+}
+
+function getSupabaseServiceRoleKey(): string {
+  return (
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.SUPABASE_SECRET_KEY ||
+    getSupabaseAnonKey()
+  );
+}
+
 export async function createClient() {
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey();
+
   try {
     const cookieStore = await cookies();
 
     return createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      url,
+      anonKey,
       {
         cookies: {
           getAll() {
@@ -29,9 +52,9 @@ export async function createClient() {
     );
   } catch {
     // Fallback when called outside of Next.js request store (e.g. standalone test execution)
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+    const key = getSupabaseServiceRoleKey() || anonKey;
     return createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      url,
       key,
       {
         cookies: {
@@ -46,9 +69,10 @@ export async function createClient() {
 }
 
 export async function createAdminClient() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  const url = getSupabaseUrl();
+  const key = getSupabaseServiceRoleKey();
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    url,
     key,
     {
       cookies: {
@@ -60,3 +84,4 @@ export async function createAdminClient() {
     }
   );
 }
+
